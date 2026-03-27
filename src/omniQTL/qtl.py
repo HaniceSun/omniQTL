@@ -138,7 +138,7 @@ class QTL:
                     break
         cov_samples = pd.read_table(cov_file, header=0, sep=r'\s+', nrows=1).columns[1:].values
         wh1 = sum(geno_samples == pheno_samples) == len(geno_samples)
-        wh1 = sum(geno_samples == cov_samples) == len(geno_samples)
+        wh2 = sum(geno_samples == cov_samples) == len(geno_samples)
         if not wh1 or not wh2:
             raise ValueError(f'Sample names in genotype, phenotype and covariate files do not match')
 
