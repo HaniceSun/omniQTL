@@ -30,8 +30,21 @@ def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/G
     cmd = f'wget {vcf_url}.tbi -O {vcf_file}.tbi'
     subprocess.run(cmd, shell=True)
 
-    cmd = f'bcftools annotate --rename-chrs {mapping_file} -Oz -o {out_file} {vcf_file}; tabix -p vcf {out_file}'
+    cmd = f'bcftools annotate --rename-chrs {mapping_file} -Oz -o {out_file} {vcf_file}'
     subprocess.run(cmd, shell=True)
+    try:
+        cmd = f'tabix -p vcf {out_file}'
+        subprocess.run(cmd, shell=True, check=True)
+    except Exception as e:
+        print(f'Error indexing VCF file: {e}, attempting to sort and index again.')
+        out_sorted = out_file.replace('.vcf.gz', '.sorted.vcf.gz')
+        try:
+            cmd = f'bcftools sort {out_file} -Oz -o {out_sorted}; tabix -p vcf {out_sorted}'
+            subprocess.run(cmd, shell=True, check=True)
+            os.rename(out_sorted, out_file)
+            os.rename(out_sorted + '.tbi', out_file + '.tbi')
+        except Exception as e:
+            print(f'Error sorting and indexing VCF file: {e}. Please check the VCF file for issues.')
 
 def gtf_to_GenePosType(in_file):
     D = {}
