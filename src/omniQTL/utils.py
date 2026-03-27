@@ -1,0 +1,62 @@
+import os
+import glob
+import json
+import numpy as np
+import pandas as pd
+import subprocess
+import pyranges
+from importlib import resources
+import yaml
+import datetime
+import gzip
+BASE = resources.files(__package__.split(".")[0])
+
+def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz', assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_report.txt', out_file='dbSNP157_GRCh38.vcf.gz'):
+    # vcf_url='https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.25.gz'
+    # assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.25_GRCh37.p13/GCF_000001405.25_GRCh37.p13_assembly_report.txt'
+    # out_file='dbSNP157_GRCh37.vcf.gz'
+
+    assembly_report_file = assembly_report_url.split('/')[-1]
+    mapping_file = assembly_report_file.split('.txt')[0] + '_mapping.txt'
+    cmd = f'wget {assembly_report_url} -O {assembly_report_file}'
+    subprocess.run(cmd, shell=True)
+    df = pd.read_table(assembly_report_file, comment='#', header=None)
+    df_sub = df.iloc[:, [6, -1]]
+    df_sub.to_csv(mapping_file, sep='\t', index=False, header=False)
+
+    vcf_file = vcf_url.split('/')[-1]
+    cmd = f'wget {vcf_url} -O {vcf_file}'
+    subprocess.run(cmd, shell=True)
+    cmd = f'wget {vcf_url}.tbi -O {vcf_file}.tbi'
+    subprocess.run(cmd, shell=True)
+
+    cmd = f'bcftools annotate --rename-chrs {mapping_file} -Oz -o {out_file} {vcf_file}; tabix -p vcf {out_file}'
+    subprocess.run(cmd, shell=True)
+
+def gtf_to_GenePosType(in_file):
+    D = {}
+    fin = open(in_file)
+    fout = open(in_file.split('.gtf')[0] + '_GenePosType.txt', 'w')
+    for line in fin:
+        if line[0] != '#':
+            fields = line.split('\t')
+            if fields[2] == 'gene':
+                info = fields[8].split(';')
+                for item in info:
+                    if item.find('gene_id') != -1:
+                        gene_id = item.split('"')[1]
+                        gene_name = gene_id
+                    elif item.find('gene_name') != -1:
+                        gene_name = item.split('"')[1]
+                    elif item.find('gene_biotype') != -1:
+                        gene_biotype = item.split('"')[1]
+                D.setdefault(gene_id, [])
+                D[gene_id].append('\t'.join([gene_name, fields[0], fields[3], fields[4], fields[6], gene_biotype]))
+    fin.close()
+    d = sorted(D.items(), key = lambda x : x[0])
+    for item in d:
+        if len(set(item[1])) != 1:
+            print('Warning:gene_id to multiple gene_name')
+        else:
+            fout.write(item[0] + '\t' + item[1][0] + '\n')
+    fout.close()

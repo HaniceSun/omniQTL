@@ -1,0 +1,48 @@
+{% set name = "r-base" %}
+{% set version = "4.5.2" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }} 
+
+source:
+  url: https://cran.r-project.org/src/base/R-4/R-{{ version }}.tar.gz
+
+build:
+  number: 0
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ compiler('fortran') }} # R requires a Fortran compiler
+    - make
+    - pkg-config
+  host:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ compiler('fortran') }} # R requires a Fortran compiler
+    - make
+    - pkg-config
+    - libxml2
+    - readline
+    - zlib
+    - bzip2
+    - libcurl
+    - openssl
+    - xz
+    - cairo
+    - pango
+    - icu=75.1
+  run:
+    - readline
+    - zlib
+    - bzip2
+    - xz
+    - libcurl
+    - icu=75.1
+
+test:
+  commands:
+    - R --version
+    - R -e "print('R is working!')"

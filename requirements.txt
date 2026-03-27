@@ -1,0 +1,2 @@
+pyranges==0.1.4
+pytabix==0.1

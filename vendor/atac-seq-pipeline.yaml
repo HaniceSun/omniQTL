@@ -1,0 +1,8 @@
+name: atac-seq-pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.8
+  - conda-forge::caper=2.1.0

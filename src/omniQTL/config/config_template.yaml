@@ -1,0 +1,7 @@
+TOPMed:
+  token: to be filled in by user
+  url: https://imputation.biodatacatalyst.nhlbi.nih.gov/api/v2/jobs/submit/imputationserver2
+  version: 2.0.12-statgen.4
+  refpanel: apps@topmed-r3
+  population: all
+  phasing: eagle
