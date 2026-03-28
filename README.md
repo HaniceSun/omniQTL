@@ -37,9 +37,16 @@ geno.get_topmed_results()
 vcf_files = ['Stanford_TOPMed/Stanford_imputed.vcf.gz', 'Oxford_TOPMed/Oxford_imputed.vcf.gz']
 output_vcf = 'Genotyping_imputed_OxfordStanford.vcf.gz'
 geno.merge_vcfs(vcf_files, output_vcf)
-geno.subset_samples_vcf(vcf_file='Genotyping_imputed_OxfordStanford.vcf.gz', sample_list='caQTL_subset_sample_list.txt', output_vcf='caQTL_genotyping.vcf.gz')
-geno.rename_samples_vcf(vcf_file='caQTL_genotyping.vcf.gz', sample_mapping_file='caQTL_subset_sample_mapping.txt')
-geno.annotate_variants_vcf(vcf_file='caQTL_genotyping_sampleRenamed.vcf.gz', dbsnp_vcf='dbSNP157_GRCh38.vcf.gz', ref_fa='hg38.fa', norm_variants=False)
+
+geno.subset_samples_vcf(vcf_file='Genotyping_imputed_OxfordStanford.vcf.gz',
+sample_list='caQTL_subset_sample_list.txt', output_vcf='caQTL_genotyping.vcf.gz')
+
+geno.rename_samples_vcf(vcf_file='caQTL_genotyping.vcf.gz',
+sample_mapping_file='caQTL_subset_sample_mapping.txt')
+
+geno.annotate_variants_vcf(vcf_file='caQTL_genotyping_sampleRenamed.vcf.gz',
+dbsnp_vcf='dbSNP157_GRCh38.vcf.gz', ref_fa='hg38.fa', norm_variants=False)
+
 geno.filter_variants_vcf('caQTL_genotyping_sampleRenamed_rsID.vcf.gz')
 
 - caQTL
@@ -55,16 +62,22 @@ omni.get_tss_score()
 omni.get_mbv_script()
 
 omni.get_concensus_peaks(in_dir='peaks_qvalue', out_file='ATACseq_qvalue_consensus_peaks.bed')
-omni.get_summit_extended_fixed_width_peaks(in_dir='peaks_qvalue', out_file='ATACseq_qvalue_summitExtended_peaks.bed')
+
+omni.get_summit_extended_fixed_width_peaks(in_dir='peaks_qvalue',out_file='ATACseq_qvalue_summitExtended_peaks.bed')
 omni.get_peak_counts(in_file='ATACseq_qvalue_consensus_peaks.bed', out_file='featureCounts_qvalue.sh')
 omni.merge_counts_tables(counts_tables='counts_tables_qvalue.txt', out_file='ATACseq_qvalue_peakCounts.txt')
 omni.get_closest_genes(in_file='ATACseq_qvalue_peakCounts.txt', gtf_file='Ensembl/Homo_sapiens.GRCh38.110.gtf')
 omni.counts_to_tpm(in_file='ATACseq_qvalue_peakCounts_closestGene.txt')
-omni.filter_phenotype_features(tpm_file='ATACseq_qvalue_peakCounts_closestGene_TPM.txt', counts_file='ATACseq_qvalue_peakCounts_closestGene.txt')
+
+omni.filter_phenotype_features(tpm_file='ATACseq_qvalue_peakCounts_closestGene_TPM.txt',
+counts_file='ATACseq_qvalue_peakCounts_closestGene.txt')
+
 omni.make_bed_for_QTLtools('ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.txt')
 omni.run_PCA_on_bed(in_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.bed.gz')
 omni.get_QTLtools_script(pheno_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.bed.gz', 
-geno_file='caQTL_genotyping_sampleRenamed_rsID_variantFiltered.vcf.gz', cov_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered_PC25.txt', out_suffix='qvalue')
+
+geno_file='caQTL_genotyping_sampleRenamed_rsID_variantFiltered.vcf.gz',
+cov_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered_PC25.txt', out_suffix='qvalue')
 
 - colocalization
 from omniQTL.coloc import Coloc
