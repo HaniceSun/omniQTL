@@ -21,7 +21,7 @@ conda activate omniQTL
 ## Usage
 
 ```python
-- genotyping data
+- genotyping
 
 from omniQTL.genotyping import Genotyping
 geno = Genotyping(bfile='Stanford')
