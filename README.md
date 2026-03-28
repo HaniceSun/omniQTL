@@ -82,8 +82,8 @@ counts_file='ATACseq_qvalue_peakCounts_closestGene.txt')
 
 omni.make_bed_for_QTLtools('ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.txt')
 omni.run_PCA_on_bed(in_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.bed.gz')
-omni.get_QTLtools_script(pheno_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.bed.gz', 
 
+omni.get_QTLtools_script(pheno_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.bed.gz', 
 geno_file='caQTL_genotyping_sampleRenamed_rsID_variantFiltered.vcf.gz',
 cov_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered_PC25.txt', out_suffix='qvalue')
 
