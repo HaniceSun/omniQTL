@@ -75,18 +75,11 @@ def gtf_to_GenePosType(in_file):
             fout.write(item[0] + '\t' + item[1][0] + '\n')
     fout.close()
 
-def get_qtltools_sig_table(in_file, qtl_pass='nominal', params={'p_col':'nom_pval', 'p_threshold':8e-5}):
-    out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
-    if qtl_type == 'nominal':
-        with gzip.open(in_file, 'rt') as fin, gzip.open(out_file, 'wt') as fout:
-            header = fin.readline().strip().split('\t')
-            fout.write('\t'.join(header) + '\n')
-            p_idx = header.index(params['p_col'])
-            for line in fin:
-                fields = line.strip().split('\t')
-                try:
-                    p_value = float(fields[p_idx])
-                    if p_value < params['p_threshold']:
-                        fout.write(line)
-                except:
-                    pass
+def annotate_vcf_with_vep(vcf_file, vep_env='vep115', vep_cache='vep_cache', species='homo_sapiens', assembly='GRCh38'):
+    out_script = 'run_vep_' + vcf_file.split('.vcf')[0] + '.sh'
+    out_file = vcf_file.split('.vcf')[0] + '.vep'
+    with open(out_script, 'w') as fout:
+        cmd = f'conda run -n {vep_env} vep --vcf -i {vcf_file} -o {out_file} --species {species} --assembly {assembly} --cache --dir_cache {vep_cache} --canonical --regulatory --show_ref_allele --force_overwrite'
+        fout.write(cmd + '\n')
+        cmd = f'gzip {out_file}'
+        fout.write(cmd + '\n')
