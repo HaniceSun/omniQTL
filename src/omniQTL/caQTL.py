@@ -114,7 +114,7 @@ class CAQTL(QTL, SeqQC):
                             sample = f.split('/')[1]
                             out.write(f'ln {f} {ot}/{sample}.json\n')
 
-    def get_concensus_peaks(self, in_dir='peaks_qvalue', out_file='ATACseq_consensus_peaks.bed', threshold=0.05):
+    def get_consensus_peaks(self, in_dir='peaks_qvalue', out_file='ATACseq_consensus_peaks.bed', threshold=0.05):
         fs = sorted([x for x in os.listdir(in_dir) if x.endswith('.narrowPeak.gz')])
         dfs = []
         for f in fs:

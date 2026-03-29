@@ -61,7 +61,7 @@ omni.get_percent_mapped_reads()
 omni.get_tss_score()
 omni.get_mbv_script()
 
-omni.get_concensus_peaks(in_dir='peaks_qvalue', out_file='ATACseq_qvalue_consensus_peaks.bed')
+omni.get_consensus_peaks(in_dir='peaks_qvalue', out_file='ATACseq_qvalue_consensus_peaks.bed')
 
 omni.get_summit_extended_fixed_width_peaks(in_dir='peaks_qvalue',
 out_file='ATACseq_qvalue_summitExtended_peaks.bed')

@@ -205,12 +205,16 @@ class QTL:
                         raise FileNotFoundError(f'FDR script {fdr_script} not found')
                     out.write(cmd + '\n')
 
-    def get_QTLtools_sig_table(self, in_file, thresholds_file=None, qtl_pass=None, params={'p_col':'nom_pval', 'padj_col':'adj_beta_pval'}):
+    def get_QTLtools_sig_table(self, in_file, qtl_pass=None, thresholds_file=None, significant_file=None, params={'p_col':'nom_pval', 'padj_col':'adj_beta_pval'}):
         if qtl_pass is None:
             if in_file.find('nominal') != -1:
                 qtl_pass = 'nominal'
+                if thresholds_file is None:
+                    raise ValueError(f'For nominal pass, thresholds_file is needed to filter significant QTLs')
             elif in_file.find('permute') != -1:
                 qtl_pass = 'permute'
+                if significant_file is None:
+                    raise ValueError(f'For permute pass, significant_file is needed to filter significant QTLs')
             elif in_file.find('conditional') != -1:
                 qtl_pass = 'conditional'
             else:
@@ -221,7 +225,7 @@ class QTL:
         out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
         if qtl_pass == 'nominal':
             if not os.path.exists(thresholds_file):
-                raise FileNotFoundError(f'{thresholds_file} not found, please run permutation analysis first to get the corresponding thresholds file')
+                raise FileNotFoundError(f'{thresholds_file} not found')
             df_thresholds = pd.read_table(thresholds_file, header=None, sep=r'\s+')
             df_thresholds.dropna(inplace=True)
             D = dict(zip(df_thresholds.iloc[:, 0], df_thresholds.iloc[:, 1]))
@@ -240,10 +244,11 @@ class QTL:
                     except:
                         pass
         elif qtl_pass == 'permute':
-            in_file_sig = in_file.split('.txt')[0] + '.significant.txt'
+            if not os.path.exists(significant_file):
+                raise FileNotFoundError(f'{significant_file} not found')
             out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
             df = pd.read_table(in_file, header=0, sep='\t')
-            df_sig = pd.read_table(in_file_sig, header=None, sep=r'\s+')
+            df_sig = pd.read_table(significant_file, header=None, sep=r'\s+')
             wh = df.iloc[:, 0].isin(df_sig.iloc[:, 0])
             df_sub = df.loc[wh, ]
             df_sub.sort_values(by=params['padj_col'], inplace=True)
