@@ -65,7 +65,7 @@ class Coloc:
         print(cmd)
         subprocess.run(cmd, shell=True)
 
-    def prepare_coloc_input(self, sumstats1='sumstats_from_QTLtools.txt', sumstats2='sumstats_gwas_harmonised.txt', sumstats1_type='qtl', sumstats2_type='gwas', sumstats1_sample_size=967, sumstats2_sample_size=1000000, sumstats1_study_type='quant', sumstats2_study_type='cc', sumstats1_sig_file='sumstats_from_QTLtools_permute_sig.txt', out_dir=None, bfile_for_ld=None, external_ld=None, sumstats_suffixes=['_ss1', '_ss2'], params1={'var_key':['var_id'], 'feature_id':'phe_id', 'pos_col':'var_from', 'beta_col':'slope', 'se_col':'slope_se', 'maf_col':'MAF'}, params2={'var_key':['rsid'], 'pos_col':'base_pair_location', 'beta_col':'beta', 'se_col':'standard_error', 'maf_col':'MAF'}):
+    def prepare_coloc_input(self, sumstats1='sumstats_from_QTLtools.txt', sumstats2='sumstats_gwas_harmonised.txt', sumstats1_type='qtl', sumstats2_type='gwas', sumstats1_sample_size=100, sumstats2_sample_size=1000000, sumstats1_study_type='quant', sumstats2_study_type='cc', sumstats1_sig_file='sumstats_from_QTLtools_permute_sig.txt', out_dir=None, bfile_for_ld=None, external_ld=None, sumstats_suffixes=['_ss1', '_ss2'], params1={'var_key':['var_id'], 'feature_id':'phe_id', 'pos_col':'var_from', 'beta_col':'slope', 'se_col':'slope_se', 'maf_col':'MAF'}, params2={'var_key':['rsid'], 'pos_col':'base_pair_location', 'beta_col':'beta', 'se_col':'standard_error', 'maf_col':'MAF'}):
         if out_dir is None:
             out_dir = sumstats1.split('.txt')[0].split('.tsv')[0] + '_' + sumstats2.split('.txt')[0].split('.tsv')[0] + '_coloc'
         os.makedirs(out_dir, exist_ok=True)
@@ -80,7 +80,7 @@ class Coloc:
 
         df1 = pd.read_table(sumstats1, sep='\t', header=0)
         if sumstats1_sig_file is not None and os.path.exists(sumstats1_sig_file):
-            df_sig = pd.read_table(sumstats1_sig_file, header=0, sep='\t')
+            df_sig = pd.read_table(sumstats1_sig_file, header=0, sep=r'\s+')
             wh = df1.iloc[:, 0].isin(df_sig.iloc[:, 0])
             df1 = df1[wh].copy()
 
