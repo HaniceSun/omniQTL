@@ -40,18 +40,18 @@ class Visualization:
         df['observed'] = -np.log10(df['min_p'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def qq_plot(self, in_file, title='QQ Plot', markerscale=4, scatter_size=4, color='C1'):
+    def qq_plot(self, in_file, title='QQ plot', markerscale=4, scatter_size=4, color='C1', figsize=(4, 4)):
         out_file = in_file.replace('.txt', '.pdf')
+        qtl_type = in_file.split('_')[0]
         df = pd.read_table(in_file, header=0, sep='\t')
-        fig = plt.figure()
+        fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         sns.scatterplot(x='expected', y='observed', s=scatter_size, ax=ax, data=df, color=color)
         ax.plot([0, df['expected'].max()], [0, df['expected'].max()], linestyle="--", color='C0')
-    
         ax.set_xlabel("Expected -log10(p)")
         ax.set_ylabel("Observed -log10(p)")
-        ax.set_title(title)
-        ax.legend(title=None, markerscale=markerscale)
+        ax.set_title(title + ' of ' + qtl_type)
+        plt.tight_layout()
         plt.savefig(out_file)
 
     def get_table_for_upset_plot(self, in_files=['caQTL_permute-1000_w1k_qvalue.significant.txt'], out_file='QTL_upset_plot_table.txt'):
@@ -110,15 +110,44 @@ class Visualization:
         df = pd.DataFrame(L, columns=['peak_type', 'sample', 'number_of_peaks'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', out_file='caQTL_number_raw_peaks_boxplot.pdf', cmap='Blues', ylabel='Number of raw peaks', add_stripplot=False, figsize=(4, 4)):
+    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', out_file='caQTL_number_raw_peaks_boxplot.pdf', cmap='Blues', ylabel='Number of raw peaks (million)', add_stripplot=False, figsize=(4, 4)):
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
+        if ylabel.find('million') != -1:
+            df['number_of_peaks'] = df['number_of_peaks']/1e6
         sns.boxplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False)
         if add_stripplot:
             sns.stripplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, color='C0', size=4)
         ax.set_xlabel('')
         ax.set_ylabel(ylabel)
+        plt.tight_layout()
+        plt.savefig(out_file)
+
+    def get_number_merged_peaks(self, in_files, out_file='caQTL_number_merged_peaks.txt', params={'consensus':'consensus peaks', 'summitExtended':'summit extended peaks'}):
+        L = []
+        for f in in_files:
+            peak_type = f.split('_')[1]
+            peak_method = f.split('_')[2]
+            peak_method = params.get(peak_method, peak_method)
+            n = 0
+            with open(f) as fin:
+                for line in fin:
+                    n += 1
+            L.append([peak_type, peak_method, n])
+        df = pd.DataFrame(L, columns=['peak_type', 'peak_method', 'number_of_peaks'])
+        df.to_csv(out_file, index=False, sep='\t')
+
+    def plot_number_merged_peaks(self, in_file='caQTL_number_merged_peaks.txt', out_file='caQTL_number_merged_peaks_barplot.pdf', cmap='Blues', ylabel='Number of merged peaks (million)', figsize=(4, 4)):
+        df = pd.read_table(in_file, header=0, sep='\t')
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        if ylabel.find('million') != -1:
+            df['number_of_peaks'] = df['number_of_peaks']/1e6
+        sns.barplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_method', palette=cmap)
+        ax.set_xlabel('')
+        ax.set_ylabel(ylabel)
+        ax.legend(title=None)
         plt.tight_layout()
         plt.savefig(out_file)
 
@@ -158,3 +187,52 @@ class Visualization:
         ax.legend(handles=legends)
         plt.tight_layout()
         plt.savefig(out_file)
+
+    def get_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz'):
+        out_file = in_file.replace('.txt.gz', '_variants.txt')
+        S = set()
+        with gzip.open(in_file, 'rt') as f:
+            head = f.readline().strip().split('\t')
+            id_idx = head.index('var_id')
+            chrom_idx = head.index('var_chr')
+            pos_idx = head.index('var_from')
+            for line in f:
+                items = line.strip().split('\t')
+                var = (items[id_idx], items[chrom_idx], items[pos_idx])
+                S.add(var)
+        with open(out_file, 'w') as f:
+            for k in sorted(S):
+                f.write('\t'.join(k) + '\n')
+
+    def get_non_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', params={'p_col': 'nom_pval', 'p_threshold': 0.05, 'var_col':'var_id'}):
+        out_file = in_file.replace('.txt.gz', '_non_sig_variants.txt')
+        D = {}
+        p_col = params.get('p_col', 'nom_pval')
+        var_col = params.get('var_col', 'var_id')
+        p_threshold = params.get('p_threshold', 0.05)
+        with gzip.open(in_file, 'rt') as f:
+            head = f.readline().strip().split('\t')
+            p_idx = head.index(p_col)
+            var_idx = head.index(var_col)
+            for line in f:
+                items = line.strip().split('\t')
+                var = items[var_idx]
+                try:
+                    p = float(items[idx])
+                except:
+                    p = 1.0
+                D.setdefault(var, [])
+                D[var].append(p)
+        with open(out_file, 'w') as f:
+            for k in sorted(D):
+                if min(D[k]) > p_threshold:
+                    f.write(k + '\n')
+
+    def split_Ensembl_regulatory_annotation(self, in_file='Ensembl_BioMart_RegulatoryAnnotation.txt.gz'):
+        df = pd.read_table(in_file, header=0, sep='\t')
+        for gi, g in df.groupby('Feature type'):
+            out_file = in_file.replace('.txt.gz', f'_{gi}.bed')
+            g_sub = g.loc[:, ['Chromosome/scaffold name', 'Start (bp)', 'End (bp)']]
+            g_sub.columns = ['ch', 'start', 'end']
+            g_sub['ch'] = [f'chr{x}' for x in g_sub['ch']]
+            g_sub.to_csv(out_file, header=False, index=False, sep='\t')
