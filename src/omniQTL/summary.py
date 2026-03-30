@@ -204,19 +204,20 @@ class Visualization:
             for k in sorted(S):
                 f.write('\t'.join(k) + '\n')
 
-    def get_non_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', params={'p_col': 'nom_pval', 'p_threshold': 0.05, 'var_col':'var_id'}):
+    def get_non_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', params={'p_col': 'nom_pval', 'p_threshold': 0.05}):
         out_file = in_file.replace('.txt.gz', '_non_sig_variants.txt')
         D = {}
         p_col = params.get('p_col', 'nom_pval')
-        var_col = params.get('var_col', 'var_id')
         p_threshold = params.get('p_threshold', 0.05)
         with gzip.open(in_file, 'rt') as f:
             head = f.readline().strip().split('\t')
             p_idx = head.index(p_col)
-            var_idx = head.index(var_col)
+            id_idx = head.index('var_id')
+            chrom_idx = head.index('var_chr')
+            pos_idx = head.index('var_from')
             for line in f:
                 items = line.strip().split('\t')
-                var = items[var_idx]
+                var = '\t'.join([items[id_idx], str(items[chrom_idx]), str(items[pos_idx])])
                 try:
                     p = float(items[idx])
                 except:
