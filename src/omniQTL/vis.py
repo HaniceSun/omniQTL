@@ -10,6 +10,18 @@ import matplotlib.patches as mpatches
 import pylab as plt
 import seaborn as sns
 
+plt.rcParams.update({
+    'figure.figsize': [6.4, 4.8],
+    'font.size': 14,
+    'axes.titlesize': 16,
+    'axes.labelsize': 14,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'figure.titlesize': 18,
+    'figure.labelsize': 18,
+    'legend.fontsize': 10,
+})
+
 class Visualization:
     def __init__(self):
         pass
@@ -98,14 +110,16 @@ class Visualization:
         df = pd.DataFrame(L, columns=['peak_type', 'sample', 'number_of_peaks'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', out_file='caQTL_number_raw_peaks_violin.pdf', ylabel='Number of raw peaks'):
+    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', out_file='caQTL_number_raw_peaks_boxplot.pdf', cmap='Blues', ylabel='Number of raw peaks', add_stripplot=False, figsize=(4, 4)):
         df = pd.read_table(in_file, header=0, sep='\t')
-        fig = plt.figure()
+        fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
-        sns.violinplot(x='peak_type', y='number_of_peaks', data=df, ax=ax)
-        sns.stripplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, color='C1', size=4)
+        sns.boxplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False)
+        if add_stripplot:
+            sns.stripplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, color='C0', size=4)
         ax.set_xlabel('')
         ax.set_ylabel(ylabel)
+        plt.tight_layout()
         plt.savefig(out_file)
 
     def get_number_independent_signals(self, in_files=[], out_file='QTL_number_of_independent_signals.txt'):
