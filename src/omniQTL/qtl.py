@@ -128,6 +128,10 @@ class QTL:
         print('PCA on bed file completed.')
 
     def get_QTLtools_script(self, pheno_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz', geno_file='genotype_imputed.vcf.gz', cov_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt', out_suffix='PC25', qtl_type='caQTL', qtl_pass=['nominal', 'permute', 'conditional'], n_chunks=30, with_normal=True, with_std_err=True, with_cov=True, window_size=None, fdr_script=None, params={'nominal':1.0, 'permute':1000, 'conditional':0.05, 'seed':42}):
+        '''
+        if the output of significant.txt and thresholds.txt are all NA when using the default qtltools_runFDR_cis.R from QTLtools, switch to the qtltools_runFDR_cis_padj.R in the scripts folder by providing it to the  fdr_script parater, which simply replaces qvalue with p.adjust to calculate the adjusted p-values. 
+        '''
+
         if n_chunks < 22:
             print('WARNING: QTLtools may not run properly with if chunks fewer than the number of chromosomes')
 
