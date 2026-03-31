@@ -1,28 +1,6 @@
 from .utils import *
-import matplotlib
-matplotlib.use('agg')
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
-matplotlib.rcParams['svg.fonttype'] = 'none'
-matplotlib.rcParams['font.sans-serif'] = ['Arial'] + matplotlib.rcParams['font.sans-serif']
-matplotlib.rcParams['savefig.dpi'] = 300
-import matplotlib.patches as mpatches
-import pylab as plt
-import seaborn as sns
 
-plt.rcParams.update({
-    'figure.figsize': [6.4, 4.8],
-    'font.size': 14,
-    'axes.titlesize': 16,
-    'axes.labelsize': 14,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    'figure.titlesize': 18,
-    'figure.labelsize': 18,
-    'legend.fontsize': 10,
-})
-
-class Visualization:
+class Summary:
     def __init__(self):
         pass
 
@@ -52,6 +30,37 @@ class Visualization:
         ax.set_ylabel("Observed -log10(p)")
         ax.set_title(title + ' of ' + qtl_type)
         plt.tight_layout()
+        plt.savefig(out_file)
+
+    def bar_plot_significant_loci(self, in_file, axes=[0.3, 0.4, 0.6, 0.5], cmap='Dark2', show_numbers=True):
+        out_file = in_file.split('.txt')[0] + '.pdf'
+        cmap = sns.color_palette(cmap)
+
+        df = pd.read_table(in_file, header=0, sep='\t')
+        df['StudySampleSize'] = [f"{df['Study'].iloc[n]}\n(N={df['SampleSize'].iloc[n]})" for n in range(df.shape[0])]
+    
+        fig = plt.figure()
+        ax = fig.add_axes(axes)
+        sns.barplot(y='Number of significant loci', x='StudySampleSize', hue='StudySampleSize', data=df, palette=[cmap[0], cmap[-1], cmap[1], cmap[-1], cmap[2]], legend=False)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+        ax.set_xlabel('')
+        if show_numbers:
+            for i, row in df.iterrows():
+                N = row['Number of significant loci']
+                ax.text(i, N, N, ha='center', va='bottom')
+        ylim = ax.get_ylim()
+        ax.set_ylim(ylim[0], ylim[1] * 1.1)
+
+        y1 = -0.4
+        y2 = -0.5
+        ax.plot([0, 0, 1, 1], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
+        ax.plot([2, 2, 3, 3], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
+        ax.plot([4, 4], [y1, y2], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
+        ax.text(0.5, y2-0.03, 'caQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+        ax.text(2.5, y2-0.03, 'eQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+        ax.text(4, y2-0.03, 'pQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+
+        #plt.tight_layout()
         plt.savefig(out_file)
 
     def get_table_for_upset_plot(self, in_files=['caQTL_permute-1000_w1k_qvalue.significant.txt'], out_file='QTL_upset_plot_table.txt'):
@@ -237,3 +246,73 @@ class Visualization:
             g_sub.columns = ['ch', 'start', 'end']
             g_sub['ch'] = [f'chr{x}' for x in g_sub['ch']]
             g_sub.to_csv(out_file, header=False, index=False, sep='\t')
+
+    def get_nominal_sig_associations(self, in_files=['caQTL_nominal-1.0_w1k_qvalue_extraInfo_sig.txt.gz',
+                                   'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz'],
+                                   out_file='QTL_nomnial_sig_associations.txt'):
+        L = []
+        for f in in_files:
+            qtl_type = f.split('_')[0]
+            with gzip.open(f, 'rt') as fin:
+                head = fin.readline().strip().split('\t')
+                phe_idx = head.index('phe_id')
+                var_idx = head.index('var_id')
+                p_idx = head.index('nom_pval')
+                beta_idx = head.index('slope')
+                for line in fin:
+                    items = line.strip().split('\t')
+                    if qtl_type in ['eQTL', 'pQTL']:
+                        genes = [items[phe_idx].split('_')[-1]]
+                    else:
+                        genes = items[phe_idx].split('_')[-1].split(',')
+                    for gene in genes:
+                        L.append([items[phe_idx], items[var_idx], gene, items[beta_idx], items[p_idx], qtl_type])
+        df = pd.DataFrame(L, columns=['phe_id', 'var_id', 'gene', 'beta', 'pval', 'qtl'])
+        df.to_csv(out_file, index=False, sep='\t')
+
+    def get_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations.txt', N=3):
+        out_file = in_file.replace('.txt', f'_recurrent{N}.txt')
+        df = pd.read_table(in_file, header=0, sep='\t')
+        D = {}
+        for gi, g in df.groupby('gene'):
+            for gi2, g2 in g.groupby(['gene', 'var_id']):
+                if g2['qtl'].nunique() >= N:
+                    D.setdefault(gi, [])
+                    g3 = g2.sort_values('pval')
+                    g3.drop_duplicates(subset='qtl', keep='first', inplace=True)
+                    D[gi].append(g3)
+
+        for k in D:
+            D[k] = sorted(D[k], key=lambda x: x['pval'].min())
+
+        L = []
+        for k in sorted(D):
+            L.append(D[k][0])
+        if L:
+            df_out = pd.concat(L, axis=0)
+            df_out.columns = df.columns
+            df_out.to_csv(out_file, index=False, sep='\t')
+
+    def heatmap_of_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations_recurrent3.txt', cmap='coolwarm', figsize=(4, 8), fontsize=8):
+        out_file = in_file.replace('.txt', '_heatmap.pdf')
+        df = pd.read_table(in_file, header=0, sep='\t')
+        df_pivot = df.pivot(index=['gene', 'var_id'], columns='qtl', values='beta')
+        df_pivot.fillna(0, inplace=True)
+
+        df = pd.DataFrame(df_pivot.values)
+        df.columns = df_pivot.columns
+        df.index = df_pivot.index.get_level_values('gene')
+        df.columns.name = None
+        df.index.name = None
+        df['variant'] = df_pivot.index.get_level_values('var_id')
+        g = sns.clustermap(df.iloc[:, 0:-1], cmap=cmap, yticklabels=True, figsize=figsize)
+        g.ax_row_dendrogram.set_visible(False)
+        g.ax_col_dendrogram.set_visible(False)
+        ax = g.ax_heatmap
+        ax.set_yticklabels(ax.get_yticklabels(), fontsize=fontsize)
+
+        row_indices = g.dendrogram_row.reordered_ind
+        for i, idx in enumerate(row_indices):
+            label = df['variant'].iloc[idx]
+            ax.text(0, i + 0.5, label, ha='right', va='center', fontsize=fontsize)
+        plt.savefig(out_file)

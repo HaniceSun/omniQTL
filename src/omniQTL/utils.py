@@ -10,7 +10,30 @@ import yaml
 import datetime
 import gzip
 import liftover
+import matplotlib
+matplotlib.use('agg')
+matplotlib.rcParams['pdf.fonttype'] = 42
+matplotlib.rcParams['ps.fonttype'] = 42
+matplotlib.rcParams['svg.fonttype'] = 'none'
+matplotlib.rcParams['font.sans-serif'] = ['Arial'] + matplotlib.rcParams['font.sans-serif']
+matplotlib.rcParams['savefig.dpi'] = 300
+import matplotlib.patches as mpatches
+import pylab as plt
+import seaborn as sns
+
+plt.rcParams.update({
+    'figure.figsize': [6.4, 4.8],
+    'font.size': 14,
+    'axes.titlesize': 16,
+    'axes.labelsize': 14,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'figure.titlesize': 18,
+    'figure.labelsize': 18,
+    'legend.fontsize': 10,
+})
 BASE = resources.files(__package__.split(".")[0])
+
 
 def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz', assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_report.txt', out_file='dbSNP157_GRCh38.vcf.gz'):
     # vcf_url='https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.25.gz'

@@ -1,7 +1,4 @@
 #!/usr/bin/env Rscript
-
-## using padj instead of qvalue, updated by Hanice based on the original qtltools_runFDR_cis.R script from QTLtools
-
 #Load qvalue package
 suppressMessages(library(qvalue))
 
@@ -89,12 +86,9 @@ cat("  * Correlation between Beta approx. and Empirical p-values =", round(cor(D
 
 #Run qvalue on pvalues for best signals
 cat("\nProcess Input data with Qvalue\n")
-
-#Q <- qvalue(D[,opt_col])
-#D$qval <- Q$qvalues
-#cat("  * Proportion of significant phenotypes =" , round((1 - Q$pi0) * 100, 2), "%\n")
-
-D$qval <- p.adjust(D[,opt_col], method = "BH")
+Q <- qvalue(D[,opt_col])
+D$qval <- Q$qvalues
+cat("  * Proportion of significant phenotypes =" , round((1 - Q$pi0) * 100, 2), "%\n")
 
 #Determine significance threshold
 cat("\nDetermine significance thresholds\n");

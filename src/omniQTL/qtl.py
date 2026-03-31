@@ -128,10 +128,6 @@ class QTL:
         print('PCA on bed file completed.')
 
     def get_QTLtools_script(self, pheno_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz', geno_file='genotype_imputed.vcf.gz', cov_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt', out_suffix='PC25', qtl_type='caQTL', qtl_pass=['nominal', 'permute', 'conditional'], n_chunks=30, with_normal=True, with_std_err=True, with_cov=True, window_size=None, fdr_script=None, params={'nominal':1.0, 'permute':1000, 'conditional':0.05, 'seed':42}):
-        '''
-        if the output of significant.txt and thresholds.txt are all NA when using the default qtltools_runFDR_cis.R from QTLtools, switch to the qtltools_runFDR_cis_padj.R in the scripts folder by providing it to the  fdr_script parater, which simply replaces qvalue with p.adjust to calculate the adjusted p-values. 
-        '''
-
         if n_chunks < 22:
             print('WARNING: QTLtools may not run properly with if chunks fewer than the number of chromosomes')
 
@@ -189,25 +185,31 @@ class QTL:
 
             with open(merge_script, 'w') as out:
                 out_file_merged = f'{out_dir}.txt'
+                out_file_merged_prefix = out_file_merged.split('.txt')[0]
                 cmd = f"cat {out_dir}/chunk_*.txt > {out_file_merged}; sed -i 's/ /\\t/g' {out_file_merged}"
                 out.write(cmd + '\n')
                 cmd = f'gzip -f {out_file_merged}'
                 out.write(cmd + '\n')
                 if qtl == 'permute':
+                    fdr_script_padj = BASE / 'scripts/qtltools_runFDR_cis_padj.R'
                     if fdr_script is None:
                         if  self.QTLtools_env is not None:
                             cmd = f'conda run -n {self.QTLtools_env} which QTLtools'
-                            sp = subprocess.check_output(cmd, shell=True, text=True)
-                            fdr_script = os.path.dirname(sp) + '/scripts/qtltools_runFDR_cis.R'
+                            fdr_script = BASE / 'scripts/qtltools_runFDR_cis.R'
                         else:
                             raise FileNotFoundError(f'FDR script is needed')
                     if os.path.exists(fdr_script):
-                        cmd = f'Rscript {fdr_script} {out_file_merged}.gz {params['conditional']} {out_file_merged.split(".txt")[0]}'
+                        cmd = f'Rscript {fdr_script} {out_file_merged}.gz {params['conditional']} {out_file_merged_prefix}'
+                        cmd_padj = f'Rscript {fdr_script_padj} {out_file_merged}.gz {params['conditional']} {out_file_merged_prefix}'
                         if self.QTLtools_env is not None: 
                             cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+                            cmd_padj = f'conda run -n {self.QTLtools_env} ' + cmd_padj
                     else:
                         raise FileNotFoundError(f'FDR script {fdr_script} not found')
                     out.write(cmd + '\n')
+                    message = f'echo "WARNING: calling {fdr_script_padj} instead of {fdr_script}"'
+                    cmd_padj = f'''if awk 'NR > 1 {{ if ($NF != "NA") exit 1 }}' {out_file_merged_prefix}.significant.txt; then\n{message}\n{cmd_padj}\nfi'''
+                    out.write(cmd_padj + '\n')
 
     def get_QTLtools_sig_table(self, in_file, qtl_pass=None, thresholds_file=None, significant_file=None, params={'p_col':'nom_pval', 'padj_col':'adj_beta_pval'}):
         if qtl_pass is None:
