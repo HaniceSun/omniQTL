@@ -289,7 +289,7 @@ class Summary:
                     annotation = ','.join(sorted(set(D[var_id])))
                 fout.write('\t'.join(items + [annotation]) + '\n')
 
-    def count_variant_consequence(self, in_files=['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_annotated.txt'], out_file='QTL_variants_consequence_count.txt'):
+    def count_variant_consequence(self, in_files=['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_annotated.txt'], out_file='QTL_variants_consequence_count.txt', extra_class=['splice', '', 'inframe', 'frameshift', 'stop', 'start']):
         L = []
         for f in in_files:
             print(f'processing {f}...')
@@ -304,6 +304,11 @@ class Summary:
                     for item in fds:
                         D.setdefault(item, 0)
                         D[item] += 1
+                        if extra_class:
+                            for c in extra_class:
+                                if item.find(c) != -1:
+                                    D.setdefault(c, 0)
+                                    D[c] += 1
             for k in sorted(D):
                 L.append([f, k, D[k], N - D[k]])
         df = pd.DataFrame(L, columns=['file', 'annotation', 'in_count', 'out_count'])
