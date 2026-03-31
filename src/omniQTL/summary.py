@@ -293,7 +293,7 @@ class Summary:
             df_out.columns = df.columns
             df_out.to_csv(out_file, index=False, sep='\t')
 
-    def heatmap_of_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations_recurrent3.txt', cmap='coolwarm', figsize=(4, 8), fontsize=8):
+    def plot_heatmap_of_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations_recurrent3.txt', cmap='coolwarm', figsize=(4, 8), fontsize=8, customize_cbar=True):
         out_file = in_file.replace('.txt', '_heatmap.pdf')
         df = pd.read_table(in_file, header=0, sep='\t')
         df_pivot = df.pivot(index=['gene', 'var_id'], columns='qtl', values='beta')
@@ -314,5 +314,21 @@ class Summary:
         row_indices = g.dendrogram_row.reordered_ind
         for i, idx in enumerate(row_indices):
             label = df['variant'].iloc[idx]
-            ax.text(0, i + 0.5, label, ha='right', va='center', fontsize=fontsize)
+            ax.text(0-0.02, i + 0.5, label, ha='right', va='center', fontsize=fontsize)
+
+        if customize_cbar:
+            hm_pos = g.ax_heatmap.get_position()
+            cax_left = (hm_pos.x0 + hm_pos.x1)/2 - 0.1
+            cax_bottom = hm_pos.y1 + 0.01
+            cax_width = 0.2
+            cax_height = 0.02
+
+            cax = g.cax
+            cax.set_position([cax_left, cax_bottom, cax_width, cax_height])
+            cax.clear()
+            plt.colorbar(g.ax_heatmap.get_children()[0], cax=cax, orientation='horizontal')
+            cax.xaxis.tick_top()
+            cax.xaxis.set_label_position('top')
+            cax.set_xlabel('beta')
+
         plt.savefig(out_file)

@@ -207,7 +207,7 @@ class QTL:
                     else:
                         raise FileNotFoundError(f'FDR script {fdr_script} not found')
                     out.write(cmd + '\n')
-                    message = f'echo "WARNING: calling {fdr_script_padj} instead of {fdr_script}"'
+                    message = f'echo "WARNING: the output of {fdr_script} is all NA. Calling {fdr_script_padj} instead"'
                     cmd_padj = f'''if awk 'NR > 1 {{ if ($NF != "NA") exit 1 }}' {out_file_merged_prefix}.significant.txt; then\n{message}\n{cmd_padj}\nfi'''
                     out.write(cmd_padj + '\n')
 
