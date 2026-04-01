@@ -434,3 +434,26 @@ class Summary:
             cax.set_xlabel('beta')
 
         plt.savefig(out_file)
+
+    def bar_plot_sig_count_by_params(self, in_file, contrast=['consensus_peaks', 'summit_extended_peaks'], out_suffix='summit_vs_consensus', figsize=(4, 4), cmap='Set2', ylim=[0, 8000], xticklabels=[], fontsize=8):
+        df = pd.read_table(in_file, header=None, sep='\t')
+        df.columns = ['Number of significant peaks', 'file', 'param1', 'param2']
+    
+        df = df[df['param1'].isin(contrast)]
+        df.sort_values(by='param1', inplace=True, key=lambda x: [contrast.index(i) for i in x])
+        print(df)
+    
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        sns.barplot(x='param1', y='Number of significant peaks', hue='param2', data=df, ax=ax, palette=cmap)
+        ax.set_xlabel('')
+        ax.legend(title=None)
+        for i in ax.containers:
+            ax.bar_label(i, fmt='%.0f', padding=3, fontsize=fontsize)
+        ax.set_ylim(ylim)
+        if xticklabels:
+            ax.set_xticklabels(xticklabels)
+    
+        plt.tight_layout()
+        plt.savefig(f'{in_file.split(".txt")[0]}_{out_suffix}.pdf')
+

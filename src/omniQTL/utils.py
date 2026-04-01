@@ -34,6 +34,22 @@ plt.rcParams.update({
 })
 BASE = resources.files(__package__.split(".")[0])
 
+# modify plt.savefig to save both pdf, svg, and png
+def plt_savefig(*args, **kwargs):
+	formats = ['.png', '.svg', '.pdf']
+	fig = plt.gcf()
+	name, ext = os.path.splitext(args[0])
+	if ext in formats:
+		for x in formats:
+			f = name + x
+			args = tuple([f]) + args[1:]
+			res = fig.savefig(*args, **kwargs)
+	else:
+		res = fig.savefig(*args, **kwargs)
+	fig.canvas.draw_idle()
+	return res
+plt.savefig = plt_savefig
+
 
 def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz', assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_report.txt', out_file='dbSNP157_GRCh38.vcf.gz'):
     # vcf_url='https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.25.gz'
