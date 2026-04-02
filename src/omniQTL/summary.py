@@ -427,10 +427,10 @@ class Summary:
 
     def get_nominal_sig_associations(self, in_files=['caQTL_nominal-1.0_w1k_qvalue_extraInfo_sig.txt.gz',
                                    'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz'],
-                                   out_file='QTL_nomnial_sig_associations.txt'):
+                                   out_file='QTL_nomnial_sig_associations.txt', qtl_types={}):
         L = []
         for f in in_files:
-            qtl_type = f.split('_')[0]
+            qtl_type = qtl_types.get(f, f.split('_')[0])
             with gzip.open(f, 'rt') as fin:
                 head = fin.readline().strip().split('\t')
                 phe_idx = head.index('phe_id')
@@ -439,10 +439,10 @@ class Summary:
                 beta_idx = head.index('slope')
                 for line in fin:
                     items = line.strip().split('\t')
-                    if qtl_type in ['eQTL', 'pQTL']:
-                        genes = [items[phe_idx].split('_')[-1]]
-                    else:
+                    if qtl_type.find('caQTL') != -1:
                         genes = items[phe_idx].split('_')[-1].split(',')
+                    else:
+                        genes = [items[phe_idx].split('_')[-1]]
                     for gene in genes:
                         L.append([items[phe_idx], items[var_idx], gene, items[beta_idx], items[p_idx], qtl_type])
         df = pd.DataFrame(L, columns=['phe_id', 'var_id', 'gene', 'beta', 'pval', 'qtl'])
