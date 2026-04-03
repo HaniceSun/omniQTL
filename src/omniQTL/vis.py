@@ -7,66 +7,52 @@ class GeneTxPlot():
         pass
 
     def read_bed12(self, bed12='Homo_sapiens.GRCh38.115.bed12'):
-        self.df = pd.read_table(bed12, header=None, sep='\t', low_memory=False)
-        self.df.columns = ['chrom', 'chromStart', 'chromEnd', 'name', 'score', 'strand',
-                           'thickStart', 'thickEnd', 'itemRgb', 'blockCount', 'blockSizes', 'blockStarts',
-                           'geneID', 'geneName', 'geneBiotype', 'transcriptID', 'transcriptName', 'transcriptBiotype', 'tag']
-        return self.df
+        df = pd.read_table(bed12, header=None, sep='\t', low_memory=False)
+        df.columns = ['chrom', 'chromStart', 'chromEnd', 'name', 'score', 'strand',
+                        'thickStart', 'thickEnd', 'itemRgb', 'blockCount', 'blockSizes', 'blockStarts',
+                        'geneID', 'geneName', 'geneBiotype', 'transcriptID', 'transcriptName', 'transcriptBiotype', 'tag']
+        return df
 
-    def subset_gene(self, gene='GINS4', canonical_only=True, flank=1000, geneBiotype_include=['protein_coding'], geneName_exclude=['.']):
-        wh = self.df['geneName'].isin([gene])
-        df = self.df[wh]
+    def subset_gene(self, df, gene='GINS4', canonical_only=True, flank=1e6, geneBiotype_include=['protein_coding'], geneName_exclude=['.']):
+        wh = df['geneName'].isin([gene])
+        df_sub = df[wh]
         if canonical_only:
-            wh = np.array([True if x.find('canonical') != -1 else False for x in df['tag']])
-            df = df[wh]
+            wh = np.array([True if x.find('canonical') != -1 else False for x in df_sub['tag']])
+            df_sub = df_sub[wh]
 
-        chrom = df['chrom'].iloc[0]
-        start = df['chromStart'].min()
-        end = df['chromEnd'].max()
-        window = [chrom, start - flank, end + flank]
+        chrom = str(df_sub['chrom'].iloc[0])
+        start = df_sub['chromStart'].min()
+        end = df_sub['chromEnd'].max()
+        window = ['chr' + chrom, int(start - flank), int(end + flank)]
 
-        wh1 = (self.df['chrom'] == window[0]) & (self.df['chromStart'] > window[1]) & (self.df['chromEnd'] < window[2])
-        wh2 = self.df['geneBiotype'].isin(geneBiotype_include)
-        wh3 = ~self.df['geneName'].isin(geneName_exclude)
-        df = self.df[wh1 & wh2 & wh3]
+        wh1 = (df['chrom'] == chrom) & (df['chromStart'] > window[1]) & (df['chromEnd'] < window[2])
+        wh2 = df['geneBiotype'].isin(geneBiotype_include)
+        wh3 = ~df['geneName'].isin(geneName_exclude)
+        df_sub = df[wh1 & wh2 & wh3]
         if canonical_only:
-            wh = np.array([True if x.find('canonical') != -1 else False for x in df['tag']])
-            df = df[wh]
+            wh = np.array([True if x.find('canonical') != -1 else False for x in df_sub['tag']])
+            df_sub = df_sub[wh]
+        return (df_sub, window)
 
-        self.subset_file = gene + '.bed12'
-        df.to_csv(self.subset_file, header=None, index=None, sep='\t')
-        return window
-
-    def plot_gene_tx(self, bed12_file='GINS4.bed12', window=['1', 116900000, 117000000], flank_no_window=10000, exon_height=0.2, label_shift=1000, fontsize=8, ax=None, show_x_ticks=True, cmap='pastel'):
+    def plot_gene_tx(self, df, window, ax, show_genes=[], exon_height=0.2, fontsize=12, ylabel='Gene', show_x_ticks=True, cmap='pastel'):
         cmap = sns.color_palette(cmap)
-        if ax is None:
-            fig, ax = plt.subplots()
-
-        df = self.read_bed12(bed12_file)
-
         L = df[['chromStart', 'chromEnd', 'transcriptName']].values
         G = self._find_non_overlapping_groups(L)
 
-        if not window:
-            chrom = str(df['chrom'].iloc[0])
-            x_min = df['chromStart'].min() - flank_no_window
-            x_max = df['chromEnd'].max() + flank_no_window
-        else:
-            chrom = str(window[0])
-            x_min = window[1]
-            x_max = window[2]
-        if chrom.find('chr') == -1:
-            chrom = 'chr' + chrom
+        chrom = window[0]
+        x_min = window[1]
+        x_max = window[2]
         ax.set_xlim(x_min, x_max)
 
         if show_x_ticks:
             ax.set_xticks([x_min, int((x_min + x_max)/2), x_max])
-            ax.set_xticklabels([x_min, chrom, x_max], fontsize=6)
+            ax.set_xticklabels([int(x_min), chrom, int(x_max)], fontsize=fontsize)
         else:
             ax.set_xticks([])
 
         ax.set_yticks([])
         ax.set_ylim(0, len(set(G.values())) + 1)
+        ax.set_ylabel(ylabel, fontsize=fontsize)
 
         for n in range(df.shape[0]):
             start = df['chromStart'].values[n]
@@ -85,14 +71,13 @@ class GeneTxPlot():
                 block_start = start + int(blockStarts[b])
                 block_size = int(blockSizes[b])
                 ax.add_patch(Rectangle((block_start, y - exon_height/2), block_size, exon_height, color=color))
-            ax.text(end + label_shift, y, gene_name, va='center', fontsize=fontsize)
+            if gene_name in show_genes:
+                ax.text((start + end)/2, y - 0.15, gene_name, va='top', ha='center', fontsize=fontsize)
 
     def _find_non_overlapping_groups(self, ranges=[(1, 3), (2, 5), (6, 8), (9, 10), (4, 7)]):
         # Sort the ranges by starting point (and by ending point in case of ties)
         ranges = sorted(ranges, key=lambda x: (x[0], x[1]))
-
         groups = []
-
         # Iterate through each range
         for range in ranges:
             placed = False
@@ -116,27 +101,36 @@ class LocusZoomPlot(GeneTxPlot):
     def __init__(self):
         pass
 
-    def scatter_plot(self, df, ax, window=['1', 116900000, 117000000], x='pos', y='pv', s=6, lw=0, color='C0', cmap='Set2', ylabel='-log10(p)', hue=None):
-        ax.set_xlim([window[1], window[2]])
+    def scatter_plot(self, df, window, ax, x='pos', y='pv', s=10, lw=0, color='C0', cmap='flare', ylabel='-log10(p)', hue='R2_bin', hue_title='R2', show_legend=False, legend_size=6):
+        chrom = window[0]
+        x_min = window[1]
+        x_max = window[2]
+        ax.set_xlim(x_min, x_max)
+
         if hue:
-            sns.scatterplot(x=x, y=y, s=s, data=df, ax=ax, linewidth=lw, hue=hue, palette=cmap)
+            sns.scatterplot(x=x, y=y, s=s, data=df, ax=ax, hue=hue, lw=0, palette=cmap)
         else:
-            sns.scatterplot(x=x, y=y, s=s, data=df, ax=ax, linewidth=lw, color=color)
+            sns.scatterplot(x=x, y=y, s=s, data=df, ax=ax, color=color, lw=0)
 
         ax.set_xticks([])
         ax.set_xlabel('')
         ax.set_ylim(0, max(ax.get_ylim()[1], 10))
         ax.set_ylabel(ylabel)
-        if ax.get_legend():
-            ax.get_legend().remove()
+        if show_legend:
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(handles[::-1], labels[::-1], title=hue_title, loc='upper right', prop={'size': legend_size})
+        else:
+            if ax.get_legend():
+                ax.get_legend().remove()
 
-    def bgzip_to_df(self, bgzip_file='', window=['1', 116900000, 117000000], gene='PTGFRN', extra_filter=None, adding_ld=True, var_id='', bfile=''}):
+
+    def bgzip_to_df(self, bgzip_file, window, gene='PTGFRN', extra_filter=None, adding_ld=True, var_id='rs1127215', bfile='eQTL_genotyping_sampleRenamed_rsID_variantFiltered', pos_col='var_from', pv_col='nom_pval', pv_min=1e-300):
         header = pd.read_table(bgzip_file, header=0, nrows=0, sep='\t')
         tb = tabix.open(bgzip_file)
         chrom = window[0]
-        if chrom.find('chr') == -1:
-            chrom = 'chr' + chrom
-        res = tb.query(chrom, window[1], window[2])
+        x_min = window[1]
+        x_max = window[2]
+        res = tb.query(chrom, x_min, x_max)
         df = pd.DataFrame(res)
         df.columns = header.columns
         if gene:
@@ -147,9 +141,11 @@ class LocusZoomPlot(GeneTxPlot):
             if extra_filter is None:
                 # for caQTL, if there are multiple peaks of the same gene, just take the one with the smallest p-value if no extra_filter is provided
                 L = []
+                print('Multiple peaks of the same gene found:')
                 for gi, g in df.groupby('phe_id'):
-                    L.append([g, g['nom_pval'].min()])
-                L = sorted(L, key=lambda x: x[-1])
+                    print([gi, g.shape[0]])
+                    L.append(g)
+                L = sorted(L, key=lambda x: x[pv_col].astype(float).min())
                 df = L[0]
             else:
                 # for caQTL, if there are multiple peaks of the same gene, take the one with the peak name containing extra_filter
@@ -159,15 +155,35 @@ class LocusZoomPlot(GeneTxPlot):
                         break
 
         if adding_ld:
-            pass
+            if not os.path.exists(bfile + '.bed'):
+                raise FileNotFoundError(f'{bfile}.bed not found. Please provide a PLINK bed file for LD calculation.')
+            if not var_id:
+                raise ValueError('var_id is required for LD calculation. Please provide the variant ID for the lead SNP.')
+            D = {}
+            try:
+                out_file = f'{bfile}_{var_id}'
+                cmd = f'plink --bfile {bfile} --r2 --ld-snp {var_id} --ld-window-kb 2000 --ld-window 99999 --ld-window-r2 0.0 --out {out_file}'
+                subprocess.run(cmd, shell=True)
+                df_ld = pd.read_table(out_file + '.ld', header=0, sep=r'\s+')
+                D = dict(zip(df_ld['SNP_B'], df_ld['R2']))
+                D[var_id] = 1.0
+                df['ld_var_id'] = var_id
+                df['R2'] = df['var_id'].map(D).fillna(0)
+                df['R2_bin'] = pd.cut(df['R2'], bins=5, labels=[f'{x:.1f}' for x in np.linspace(0.2, 1, 5)])
+                print(df['R2_bin'].value_counts())
+            except Exception as e:
+                df['ld_var_id'] = var_id
+                df['R2'] = 0
+                df['R2_bin'] = 0
+                print(f'Error in LD calculation: {e}')
+        df['pos'] = pd.to_numeric(df[pos_col], errors='coerce')
+        df['pv'] = pd.to_numeric(df[pv_col], errors='coerce')
+        df = df.dropna(subset=['pos', 'pv'])
+        df['pv'] = df['pv'].clip(lower=pv_min)
+        df['pv'] = -np.log10(df['pv'])
+        df.to_csv(f'{gene}_data.txt', sep='\t', index=None)
+        return df
 
 if __name__ == '__main__':
-    gene = 'PTGFRN'
-    gtp = GeneTxPlot()
-    gtp.read_bed12(bed12='Homo_sapiens.GRCh38.115.bed12')
-    gtp.subset_gene(gene=gene)
-    fig = plt.figure(figsize=(8, 2))
-    ax = fig.add_subplot()
-    gtp.plot_gene_tx(bed12_file=f'{gene}.bed12', ax=ax)
-    lzp = LocusZoomPlot()
+    pass
 
