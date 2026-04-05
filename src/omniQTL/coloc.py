@@ -84,7 +84,7 @@ class Coloc:
             wh = df1.iloc[:, 0].isin(df_sig.iloc[:, 0])
             df1 = df1[wh].copy()
 
-        df1['var_key'] = df1[params1['var_key']].apply(lambda x: '_'.join(x.astype(str)), axis=1)
+        df1['var_key'] = df1[params1['var_key']].apply(lambda x: '_'.join(x.astype(str)).strip(), axis=1)
         df1.columns = [x + sumstats_suffixes[0] for x in df1.columns]
 
         tb = tabix.open(sumstats2)
@@ -92,7 +92,7 @@ class Coloc:
 
         for feature, df1_sub in df1.groupby(params1['feature_id'] + sumstats_suffixes[0]):
             try:
-                chrom = df1_sub[params1['chrom_col'] + sumstats_suffixes[0]].iloc[0]
+                chrom = str(df1_sub[params1['chrom_col'] + sumstats_suffixes[0]].iloc[0])
                 start = int(df1_sub[params1['pos_col'] + sumstats_suffixes[0]].min() - pos_flank)
                 end = int(df1_sub[params1['pos_col'] + sumstats_suffixes[0]].max() + pos_flank)
                 print(['processing:', feature, chrom, start, end], flush=True)
@@ -100,21 +100,26 @@ class Coloc:
                 print(f'Error processing feature {feature}. Skipping.')
                 continue
 
-            res = None
             try:
                 res = tb.query(chrom, start, end)
+                df2_sub = pd.DataFrame(res)
             except:
                 if chrom.startswith('chr'):
-                    chrom = chrom[3:]
+                    chrom = chrom.split('chr')[-1]
                 else:
                     chrom = 'chr' + chrom
-                res = tb.query(chrom, start, end)
-            if res is None or pd.DataFrame(res).shape[0] == 0:
+
+                try:
+                    res = tb.query(chrom, start, end)
+                    df2_sub = pd.DataFrame(res)
+                except:
+                    print(f'Error querying sumstats2 for feature {feature}. Skipping.')
+                    continue
+            if df2_sub.shape[0] == 0:
                 print(f'No variants found in sumstats2 for feature {feature}. Skipping.')
                 continue
-
-            df2_sub = pd.DataFrame(res, columns=df2_header)
-            df2_sub['var_key'] = df2_sub[params2['var_key']].apply(lambda x: '_'.join(x.astype(str)), axis=1)
+            df2_sub.columns = df2_header
+            df2_sub['var_key'] = df2_sub[params2['var_key']].apply(lambda x: '_'.join(x.astype(str)).strip(), axis=1)
             df2_sub.columns = [x + sumstats_suffixes[1] for x in df2_sub.columns]
             if sumstats2_type == 'gwas':
                 df2_subs = [['none', df2_sub]]
