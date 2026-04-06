@@ -279,7 +279,8 @@ class QTL:
         elif qtl_pass not in ['nominal', 'permute', 'conditional']:
             raise ValueError(f'Invalid qtl_pass value, should be one of nominal, permute or conditional')
 
-        out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
+        out_file = in_file.split('.txt')[0] + f'_sig'
+        out_file_txt = out_file + '.txt'
         if qtl_pass == 'nominal':
             if not os.path.exists(thresholds_file):
                 raise FileNotFoundError(f'{thresholds_file} not found')
@@ -287,7 +288,7 @@ class QTL:
             df_thresholds.dropna(inplace=True)
             D = dict(zip(df_thresholds.iloc[:, 0], df_thresholds.iloc[:, 1]))
 
-            with gzip.open(in_file, 'rt') as fin, gzip.open(out_file, 'wt') as fout:
+            with gzip.open(in_file, 'rt') as fin, open(out_file, 'w') as fout:
                 header = fin.readline().strip().split('\t')
                 fout.write('\t'.join(header) + '\n')
                 p_idx = header.index(params['p_col'])
@@ -303,7 +304,6 @@ class QTL:
         elif qtl_pass == 'permute':
             if not os.path.exists(significant_file):
                 raise FileNotFoundError(f'{significant_file} not found')
-            out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
             df = pd.read_table(in_file, header=0, sep='\t')
             df_sig = pd.read_table(significant_file, header=None, sep=r'\s+')
             wh = df.iloc[:, 0].isin(df_sig.iloc[:, 0])
@@ -311,7 +311,6 @@ class QTL:
             df_sub.sort_values(by=params['padj_col'], inplace=True)
             df_sub.to_csv(out_file, header=True, index=False, sep='\t')
         elif qtl_pass == 'conditional':
-            out_file = in_file.split('.txt')[0] + f'_sig.txt.gz'
             out_file_ranks = in_file.split('.txt')[0] + '_ranks.txt'
             df = pd.read_table(in_file, header=0, sep='\t')
             wh = df['bwd_sig'] == 1
@@ -328,6 +327,9 @@ class QTL:
             df_ranks.columns = ['feature', 'n_independent_signals']
             df_ranks.sort_values(by='n_independent_signals', inplace=True)
             df_ranks.to_csv(out_file_ranks, header=True, index=False, sep='\t')
+        cmd = 'head -n 1 {out_file} > {out_file_txt}; tail -n +2 {out_file} | sort -k2,2V -k 3,3n >> {out_file_txt}; bgzip {out_file_txt}; tabix -s 2 -b 3 -e 3 -S 1 {out_file_txt}.gz; rm {out_file}'
+        print(cmd)
+        subprocess.run(cmd, shell=True)
     
     def add_extra_info(self, in_file, vcf_file, do_liftover=True, params={'liftover_from':'hg38', 'liftover_to':'hg19'}):
         if not os.path.exists(vcf_file):

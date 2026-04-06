@@ -88,9 +88,19 @@ geno_file='caQTL_genotyping_sampleRenamed_rsID_variantFiltered.vcf.gz',
 cov_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered_PC25.txt', out_suffix='qvalue')
 
 - colocalization
+
 from omniQTL.coloc import Coloc
-cc = Coloc()
-cc.download_gwas_harmoniser_reference()
+omni = Coloc()
+omni.download_gwas_harmoniser_reference()
+
+omni.prepare_coloc_input(sumstats1='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', 
+sumstats2='pQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', sumstats1_type='qtl', 
+sumstats2_type='qtl', sumstats1_study_type='quant', sumstats2_study_type='quant', 
+bfile_for_ld='eQTL_genotyping_sampleRenamed_rsID_variantFiltered', sumstats1_sample_size=1000,
+sumstats2_sample_size=100, sumstats1_sig_file='eQTL_permute-1000_w1M_PC25.significant.txt',
+params2={'var_key':['var_id'], 'feature_id':'phe_id', 'pos_col':'var_from', 'beta_col':'slope', 'se_col':'slope_se', 'maf_col':'MAF'})
+
+omni.get_coloc_script(in_dir='eQTL_nominal-1.0_w1M_PC25_extraInfo_pQTL_nominal-1.0_w1M_PC25_extraInfo_coloc', out_script='run_coloc_eQTL_pQTL.sh')
 
 ```
 
