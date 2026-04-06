@@ -91,7 +91,15 @@ cov_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered_PC25.txt', out_
 
 from omniQTL.coloc import Coloc
 omni = Coloc()
+
 omni.download_gwas_harmoniser_reference()
+
+omni.prepare_gwas_harmoniser_input('T2D_DIAMANTE_EUR_sumstat.tsv.gz',
+params={'chromosome':'chromosome(b37)', 'base_pair_location':'position(b37)',
+'effect_allele':'effect_allele', 'other_allele':'other_allele',
+'p_value':'Fixed-effects_p-value', 'beta':'Fixed-effects_beta', 'standard_error':'Fixed-effects_SE'})
+
+omni.harmonise_gwas_sumstats('T2D_GGI_EUR_sumstat_harmoniser.tsv', reference_dir='harmonisation_reference')
 
 omni.prepare_coloc_input(sumstats1='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', 
 sumstats2='pQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', sumstats1_type='qtl', 
