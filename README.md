@@ -116,6 +116,10 @@ omni.get_coloc_script(in_dir='eQTL_nominal-1.0_w1M_PC25_extraInfo_pQTL_nominal-1
 
 ```
 
+## Citation
+
+If omniQTL is helpful in your projects, please cite the DOI: [10.5281/zenodo.19479186](https://doi.org/10.5281/zenodo.19479186)
+
 ## Author and License
 
 **Author:** Han Sun
