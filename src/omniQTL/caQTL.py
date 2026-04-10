@@ -186,6 +186,7 @@ class CAQTL(QTL, SeqQC):
                 df_selected.columns = ['chr', 'start', 'end']
                 df_selected['start'] = df_selected['start'] - 1
                 df_selected = df_selected[df_selected['start'] >= 0]
+                df_selected.sort_values(by=['chr', 'start', 'end'], inplace=True)
                 out_file_chrom = out_dir + '/' + out_file.split('.bed')[0] + f'_{chrom}.bed'
                 df_selected.to_csv(out_file_chrom, header=False, index=False, sep='\t')
             else:
@@ -195,6 +196,7 @@ class CAQTL(QTL, SeqQC):
             df_merged.columns = ['chr', 'start', 'end']
             df_merged['start'] = df_merged['start'] - 1
             df_merged = df_merged[df_merged['start'] >= 0]
+            df_merged.sort_values(by=['chr', 'start', 'end'], inplace=True)
             df_merged.to_csv(out_file, header=False, index=False, sep='\t')
 
     def get_peak_counts(self, in_file='ATACseq_consensus_peaks.bed', bam_dir='bams', out_file='featureCounts.sh', strand='+', n_threads=4, min_quality=30):
@@ -203,6 +205,7 @@ class CAQTL(QTL, SeqQC):
             for line in f:
                 line = line.strip()
                 chrom, start, end = line.split('\t')
+                start = str(int(start) + 1)
                 if not chrom.startswith('chr'):
                     chrom = 'chr' + chrom 
                 k = '_'.join([chrom, start, end])
