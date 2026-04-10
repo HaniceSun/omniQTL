@@ -165,10 +165,10 @@ class CAQTL(QTL, SeqQC):
             print(ch, flush=True)
             df = df_concated[df_concated[chrom_col] == ch]
             # Step 1: expand peaks
-            df['start'] = df[start_col] + df[summit_col] - half_width
-            df['end'] = df[start_col] + df[summit_col] + half_width
-            # Step 2: sort by significance (smallest p-value first)
-            df = df.sort_values(pval_col)
+            df['start'] = df[start_col] + df[summit_col] - half_width + 1
+            df['end'] = df[start_col] + df[summit_col] + half_width + 1
+            # Step 2: sort by significance (smallest p-value first, which is largest -log10(p-value))
+            df = df.sort_values(pval_col, ascending=False)
             selected = []
             while len(df) > 0:
                 # Step 3: pick most significant peak
@@ -179,12 +179,18 @@ class CAQTL(QTL, SeqQC):
                 df = df[non_overlap_mask]
             df_selected = pd.DataFrame(selected)
             if chrom is not None:
+                df_selected.columns = ['chr', 'start', 'end']
+                df_selected['start'] = df_selected['start'] - 1
+                df_selected = df_selected[df_selected['start'] >= 0]
                 out_file_chrom = out_dir + '/' + out_file.split('.bed')[0] + f'_{chrom}.bed'
                 df_selected.to_csv(out_file_chrom, header=False, index=False, sep='\t')
             else:
                 L.append(df_selected)
         if L:
             df_merged = pd.concat(L)
+            df_merged.columns = ['chr', 'start', 'end']
+            df_merged['start'] = df_merged['start'] - 1
+            df_merged = df_merged[df_merged['start'] >= 0]
             df_merged.to_csv(out_file, header=False, index=False, sep='\t')
 
     def get_peak_counts(self, in_file='ATACseq_consensus_peaks.bed', bam_dir='bams', out_file='featureCounts.sh', strand='+', n_threads=4, min_quality=30):
