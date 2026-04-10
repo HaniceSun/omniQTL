@@ -141,6 +141,10 @@ class CAQTL(QTL, SeqQC):
         df.to_csv(out_file, header=False, index=False, sep='\t')
 
     def get_summit_extended_fixed_width_peaks(self, in_dir='peaks_qvalue', out_file='ATACseq_summitExtended_peaks.bed', chrom=None, half_width=250, params={'chrom_col':0, 'start_col':1, 'summit_col':9, 'pval_col':7}):
+        '''
+        if the process is too slow on a large number of peaks, consider using the chrom parameter to run the function on each chromosome in parallel and then merge the results. Without the chrom parameter, the function will loop on all the chroms one by one.
+        '''
+
         fs = sorted([x for x in os.listdir(in_dir) if x.endswith('.narrowPeak.gz')])
         chrom_col = params['chrom_col']
         start_col = params['start_col']
