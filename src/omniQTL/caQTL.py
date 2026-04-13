@@ -114,9 +114,10 @@ class CAQTL(QTL, SeqQC):
                             sample = f.split('/')[1]
                             out.write(f'ln {f} {ot}/{sample}.json\n')
 
-    def get_consensus_peaks(self, in_dir='peaks_qvalue', out_file='ATACseq_consensus_peaks.bed', threshold=0.05):
+    def get_consensus_peaks(self, in_dir='peaks_qvalue', bed_merged=None, out_file='ATACseq_consensus_peaks.bed', threshold=0.05):
         '''
         this function is implemented according to the definition of consensus peak from this paper, Currin et al., AJHG 2021 (https://pubmed.ncbi.nlm.nih.gov/34038741/). 
+        if bed_merged is provided, the function will use the provided bed file as the merged peaks instead of merging the peaks from the input narrowPeak files. this can be used on the summit-extended peaks obtained from the get_summit_extended_fixed_width_peaks function. if bed_merged is not provided, the function will merge the peaks from the input narrowPeak files and then apply the consensus peak definition on the merged peaks.
         '''
 
         fs = sorted([x for x in os.listdir(in_dir) if x.endswith('.narrowPeak.gz')])
@@ -126,8 +127,12 @@ class CAQTL(QTL, SeqQC):
             df = df.iloc[:, 0:3]
             df.columns = ["Chromosome","Start","End"]
             dfs.append(pyranges.PyRanges(df))
-        df_concated = pyranges.concat(dfs)
-        df_merged = df_concated.merge()
+        
+        if bed_merged is None:
+            df_concated = pyranges.concat(dfs)
+            df_merged = df_concated.merge()
+        else:
+            df_merged = pyranges.read_bed(bed_merged)
 
         D = {}
         for n in range(len(dfs)):
