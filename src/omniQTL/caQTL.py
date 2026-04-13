@@ -178,11 +178,12 @@ class CAQTL(QTL, SeqQC):
         for ch in chroms:
             print(ch, flush=True)
             df = df_concated[df_concated[chrom_col] == ch]
-            # Step 1: expand peaks
+            # Step 1: expand peaks, +1 because narrowPeak format is 0-based half-open like bed format
             df['start'] = df[start_col] + df[summit_col] - half_width + 1
             df['end'] = df[start_col] + df[summit_col] + half_width + 1
             # Step 2: sort by significance (smallest p-value first, which is largest -log10(p-value))
-            df = df.sort_values(pval_col, ascending=False)
+            # sorted by chrom and start as well to ensure reproducibility when there are ties in p-value
+            df = df.sort_values([pval_col, chrom_col, start_col], ascending=False)
             selected = []
             while len(df) > 0:
                 # Step 3: pick most significant peak
