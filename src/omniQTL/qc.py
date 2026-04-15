@@ -74,7 +74,7 @@ class SeqQC:
                 cmd = f'samtools flagstat {in_file} > {out_file}'
                 f.write(cmd + '\n')
 
-    def get_number_reads(self, bam_dir='bams', out_file='number_mapped_reads.txt', flag='primary mapped'):
+    def get_number_mapped_reads(self, bam_dir='bams', out_file='number_mapped_reads.txt', flag='primary mapped'):
         fs = sorted([x for x in os.listdir(bam_dir) if x.endswith('.flagstat')])
         L = []
         for f in fs:
@@ -110,6 +110,57 @@ class SeqQC:
         df.sort_values(by='percent_mapped_reads', inplace=True)
         df.to_csv(out_file, index=False, sep='\t')
 
+    def plot_number_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(6, 4), base=1e6, paired=True, cmap='Set2'):
+        out_file = in_file.split('.txt')[0] + '_plot.pdf'
+        df = pd.read_table(in_file, sep='\t')
+        batch = False
+        hue_order = None
+        if batch_file is not None:
+            if os.path.exists(batch_file):
+                batch_df = pd.read_table(batch_file, sep='\t')
+                df = df.merge(batch_df, on='sample')
+                batch = True
+                hue_order = sorted(df['batch'].unique())
+        if paired:
+            df['number_reads'] = df['number_reads'].astype(int)/base/2
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        if batch:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
+        else:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax)
+        if base == 1e6:
+            ax.set_ylabel('Number of mapped reads (million)')
+        else:
+            ax.set_ylabel('Number of mapped reads')
+        ax.set_xticks([])
+        plt.tight_layout()
+        plt.savefig(out_file)
+
+    def plot_percent_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(6, 4), cmap='Set2'):
+        out_file = in_file.split('.txt')[0] + '_plot.pdf'
+        df = pd.read_table(in_file, sep='\t')
+        batch = False
+        hue_order = None
+        if batch_file is not None:
+            if os.path.exists(batch_file):
+                batch_df = pd.read_table(batch_file, sep='\t')
+                df = df.merge(batch_df, on='sample')
+                batch = True
+                hue_order = sorted(df['batch'].unique())
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        if batch:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
+        else:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax)
+        ax.set_ylabel('Percent of mapped reads')
+        ax.set_xticks([])
+        plt.tight_layout()
+        plt.savefig(out_file)
+
     def get_mbv_script(self, bam_dir='bams', vcf_file='variants.vcf.gz', out_file='run_mbv.sh', chrom=None, quality=10, QTLtools_env='QTLtools'):
         bams = sorted([x for x in os.listdir(bam_dir) if x.endswith('.bam')])
         with open(out_file, 'w') as f:
@@ -143,7 +194,7 @@ class SeqQC:
         out_file = out_file.replace('.txt', '_filtered.txt')
         df_sub.to_csv(out_file, index=False, sep='\t')
 
-    def get_tss_score(self, qc_dir='qc', out_file='ATACseq_tss_score.txt', score_threshold=5):
+    def get_tss_score(self, qc_dir='qc', out_file='ATACseq_tss_score.txt', score_threshold=4):
         out_file_low = out_file.replace('.txt', '_low.txt')
         fs = sorted([x for x in os.listdir(qc_dir) if x.endswith('.json')])
         L = []
@@ -161,6 +212,30 @@ class SeqQC:
                 print(f'Error processing {f} {e}')
         if L:
             df = pd.DataFrame(L, columns=['sample', 'mean_tss_score', 'tss_scores'])
+            df.sort_values(by='mean_tss_score', inplace=True)
             df.to_csv(out_file, index=False, sep='\t')
             df_sub = df[df['mean_tss_score'] < score_threshold]
             df_sub.to_csv(out_file_low, index=False, sep='\t')
+
+    def plot_tss_score(self, in_file='ATACseq_tss_score.txt', batch_file=None, figsize=(6, 4), cmap='Set2'):
+        out_file = in_file.split('.txt')[0] + '_plot.pdf'
+        df = pd.read_table(in_file, sep='\t')
+        batch = False
+        hue_order = None
+        if batch_file is not None:
+            if os.path.exists(batch_file):
+                batch_df = pd.read_table(batch_file, sep='\t')
+                df = df.merge(batch_df, on='sample')
+                batch = True
+                hue_order = sorted(df['batch'].unique())
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        if batch:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
+        else:
+            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax)
+        ax.set_ylabel('TSS enrichment score')
+        ax.set_xticks([])
+        plt.tight_layout()
+        plt.savefig(out_file)
