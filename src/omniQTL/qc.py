@@ -88,8 +88,8 @@ class SeqQC:
                             L.append([sample, n])
                         except:
                             pass
-        df = pd.DataFrame(L, columns=['sample', 'number_reads'])
-        df.sort_values(by='number_reads', inplace=True)
+        df = pd.DataFrame(L, columns=['sample', 'number_of_reads'])
+        df.sort_values(by='number_of_reads', inplace=True)
         df.to_csv(out_file, index=False, sep='\t')
 
     def get_percent_mapped_reads(self, bam_dir='bams', out_file='percent_mapped_reads.txt', flag='primary mapped'):
@@ -122,7 +122,7 @@ class SeqQC:
                 batch = True
                 hue_order = sorted(df['batch'].unique())
         if paired:
-            df['number_reads'] = df['number_reads'].astype(int)/base/2
+            df['number_of_reads'] = df['number_of_reads'].astype(int)/base/2
 
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()

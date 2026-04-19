@@ -170,7 +170,7 @@ class Summary:
             df['number_of_peaks'] = df['number_of_peaks']/1e6
         if df['peak_method'].nunique() > 1:
             sns.barplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_method', palette=cmap)
-            ax.legend(title=None)
+            ax.legend(title=None, loc='upper left', prop={'size': 7})
         else:
             sns.barplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False)
         ax.set_xlabel('')
@@ -178,33 +178,50 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
+    def plot_correlation_number_peaks_and_reads(self, in_file_reads='caQTL_number_mapped_reads.txt', in_file_peaks='caQTL_number_raw_peaks_qvalue.txt', out_file='correlation_number_peaks_and_reads.pdf', cmap='Blues', xlabel='Number of mapped reads (million)', ylabel='Number of raw peaks (million)', figsize=(4, 4), base=1e6):
+        df_reads = pd.read_table(in_file_reads, header=0, sep='\t')
+        df_peaks = pd.read_table(in_file_peaks, header=0, sep='\t')
+        df = pd.merge(df_reads, df_peaks, on='sample')
+        df['number_of_peaks'] = df['number_of_peaks']/base
+        df['number_of_reads'] = df['number_of_reads']/base
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        sns.regplot(x='number_of_reads', y='number_of_peaks', data=df, ax=ax, color='C0')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        plt.tight_layout()
+        plt.savefig(out_file)
+
     def get_length_distribution_merged_peaks(self, in_files=[], out_file='caQTL_length_distribution_merged_peaks.txt', params={'consensus':'consensus peaks', 'summitExtended':'summit extended peaks'}):
         L = []
         for f in in_files:
+            peak_threshold = f.split('_')[1]
             peak_type = f.split('_')[-2].split('.bed')[0]
             peak_type = params.get(peak_type, peak_type)
             with open(f) as fin:
                 for line in fin:
                     items = line.strip().split('\t')
                     length = int(items[2]) - int(items[1])
-                    L.append([peak_type, length])
-        df = pd.DataFrame(L, columns=['peak_type', 'length'])
+                    L.append([peak_type, peak_threshold, length])
+        df = pd.DataFrame(L, columns=['peak_type', 'peak_threshold', 'length'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_length_distribution_merged_peaks(self, in_file='caQTL_length_distribution_merged_peaks.txt', cmap='Dark2', xlabel='Length of merged peaks (bp)', figsize=(4, 4), peak_types=['consensus peaks', 'summit extended peaks']):
-        cmap = sns.color_palette(cmap)
+    def plot_length_distribution_merged_peaks(self, in_file='caQTL_length_distribution_merged_peaks.txt', cmap='Set2', xlabel='Length of merged peaks (bp)', figsize=(4, 4), peak_types=['consensus peaks', 'summit extended peaks'], show_summit=True):
         out_file = in_file.split('.txt')[0] + '_hist.pdf'
+        cmap = sns.color_palette(cmap)
         df = pd.read_table(in_file, header=0, sep='\t')
         df1 = df[df['peak_type'] == peak_types[0]]
         df2 = df[df['peak_type'] == peak_types[1]]
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
-        sns.kdeplot(x='length', ax=ax, data=df1, color=cmap[0], label=peak_types[0])
-        x = df2['length'].iloc[0]
-        y = ax.get_ylim()[1] * 0.9
-        ax.plot([x, x], [0, y], color=cmap[1], label=peak_types[1], linestyle='--', lw=2)
+        sns.kdeplot(x='length', ax=ax, data=df1, hue='peak_threshold', palette=cmap, legend=True)
+        ax.get_legend().set_title("")
+        if show_summit:
+            x = df2['length'].iloc[0]
+            y = ax.get_ylim()[1] * 0.9
+            ax.plot([x, x], [0, y], color=cmap[1], label=peak_types[1], linestyle='--', lw=2)
+            out_file = out_file.split('.pdf')[0] + '_with_summit.pdf'
         ax.set_xlabel(xlabel)
-        ax.legend(title=None)
         plt.tight_layout()
         plt.savefig(out_file)
 
@@ -539,4 +556,29 @@ class Summary:
     
         plt.tight_layout()
         plt.savefig(f'{in_file.split(".txt")[0]}_{out_suffix}.pdf')
+
+    def prs_overlap_with_sig_qtl(self, in_file, in_file2, flank=1e6):
+        df = pd.read_table(in_file, header=0, sep=',')
+        tb = tabix.open(in_file2)
+        df2_cols = pd.read_table(in_file2, header=0, sep='\t', nrows=1).columns
+        L = []
+        for n in range(df.shape[0]):
+            try:
+                chrom = df['contig_id'].iloc[n]
+                pos = df['position_hg38'].iloc[n]
+                rs = df['rsid'].iloc[n]
+                start = max(int(pos - flank), 0)
+                end = int(pos + flank)
+                res = tb.query(chrom, start, end)
+                df2 = pd.DataFrame(res)
+                if df2.shape[0] > 0:
+                    df2.columns = df2_cols
+                    df_merged = pd.merge(df.iloc[[n]], df2, left_on='rsid', right_on='var_id', how='inner')
+                    L.append(df_merged)
+            except Exception as e:
+                pass
+        if len(L) > 0:
+            df = pd.concat(L, axis=0)
+            out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_overlap.txt'
+            df.to_csv(out_file, index=False, sep='\t')
 
