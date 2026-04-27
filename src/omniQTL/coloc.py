@@ -69,7 +69,7 @@ class Coloc:
         if out_dir is None:
             out_dir = sumstats1.split('.txt')[0].split('.tsv')[0] + '_' + sumstats2.split('.txt')[0].split('.tsv')[0] + '_coloc'
             if same_gene_only:
-                out_dir += '_sameGeneOnly'
+                out_dir += '_sameGene'
         os.makedirs(out_dir, exist_ok=True)
         if bfile_for_ld is not None and external_ld is not None:
             raise ValueError("Please provide either bfile_for_ld or external_ld, not both.")
