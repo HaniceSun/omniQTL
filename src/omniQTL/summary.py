@@ -50,8 +50,8 @@ class Summary:
         ylim = ax.get_ylim()
         ax.set_ylim(ylim[0], ylim[1] * 1.1)
 
-        y1 = -0.5
-        y2 = -0.55
+        y1 = -0.55
+        y2 = -0.6
         ax.plot([0, 0, 1, 1], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
         ax.plot([2, 2, 3, 3], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
         ax.plot([4, 4], [y1, y2], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
@@ -440,6 +440,7 @@ class Summary:
         if xlim:
             ax.set_xlim(xlim)
         ax.set_ylim(ylim)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_title(title)
         ax.set_ylabel('')
         ax.legend(title=None, loc='lower right')

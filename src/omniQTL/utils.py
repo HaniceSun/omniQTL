@@ -19,6 +19,7 @@ matplotlib.rcParams['svg.fonttype'] = 'none'
 matplotlib.rcParams['font.sans-serif'] = ['Arial'] + matplotlib.rcParams['font.sans-serif']
 matplotlib.rcParams['savefig.dpi'] = 300
 import matplotlib.patches as mpatches
+from matplotlib.ticker import MaxNLocator
 import pylab as plt
 import seaborn as sns
 import scipy

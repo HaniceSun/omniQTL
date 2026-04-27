@@ -65,9 +65,11 @@ class Coloc:
         print(cmd)
         subprocess.run(cmd, shell=True)
 
-    def prepare_coloc_input(self, sumstats1='sumstats_from_QTLtools.txt', sumstats2='sumstats_gwas_harmonised.txt', sumstats1_type='qtl', sumstats2_type='gwas', sumstats1_sample_size=100, sumstats2_sample_size=1000000, sumstats1_study_type='quant', sumstats2_study_type='cc', sumstats1_sig_file='sumstats_from_QTLtools_permute_sig.txt', pos_flank=1e6, out_dir=None, bfile_for_ld=None, external_ld=None, sumstats_suffixes=['_ss1', '_ss2'], params1={'var_key':['var_id'], 'feature_id':'phe_id', 'chrom_col':'var_chr', 'pos_col':'var_from', 'beta_col':'slope', 'se_col':'slope_se', 'maf_col':'MAF'}, params2={'var_key':['rsid'], 'chrom_col':'chromosome', 'pos_col':'base_pair_location', 'beta_col':'beta', 'se_col':'standard_error', 'maf_col':'MAF'}):
+    def prepare_coloc_input(self, sumstats1='sumstats_from_QTLtools.txt', sumstats2='sumstats_gwas_harmonised.txt', sumstats1_type='qtl', sumstats2_type='gwas', sumstats1_sample_size=100, sumstats2_sample_size=1000000, sumstats1_study_type='quant', sumstats2_study_type='cc', sumstats1_sig_file='sumstats_from_QTLtools_permute_sig.txt', pos_flank=1e6, out_dir=None, bfile_for_ld=None, external_ld=None, sumstats_suffixes=['_ss1', '_ss2'], same_gene_only=False, params1={'var_key':['var_id'], 'feature_id':'phe_id', 'chrom_col':'var_chr', 'pos_col':'var_from', 'beta_col':'slope', 'se_col':'slope_se', 'maf_col':'MAF'}, params2={'var_key':['rsid'], 'chrom_col':'chromosome', 'pos_col':'base_pair_location', 'beta_col':'beta', 'se_col':'standard_error', 'maf_col':'MAF'}):
         if out_dir is None:
             out_dir = sumstats1.split('.txt')[0].split('.tsv')[0] + '_' + sumstats2.split('.txt')[0].split('.tsv')[0] + '_coloc'
+            if same_gene_only:
+                out_dir += '_sameGeneOnly'
         os.makedirs(out_dir, exist_ok=True)
         if bfile_for_ld is not None and external_ld is not None:
             raise ValueError("Please provide either bfile_for_ld or external_ld, not both.")
@@ -129,6 +131,12 @@ class Coloc:
                     df2_subs.append([gi, g])
 
             for feature2, df2_sub in df2_subs:
+                if same_gene_only:
+                    gene1 = set([feature.split('_')[1]])
+                    gene2 = set(feature2.split('_')[-1].split(','))
+                    if not geen1.intersection(gene2):
+                        print(f'Skipping feature pair {feature} and {feature2} due to same_gene_only=True.')
+                        continue
                 df_merged = pd.merge(df1_sub, df2_sub, left_on='var_key' + sumstats_suffixes[0], right_on='var_key' + sumstats_suffixes[1]).sort_values(by=params1['pos_col'] + sumstats_suffixes[0])
                 if df_merged.shape[0]:
                     df1x = pd.DataFrame() 
