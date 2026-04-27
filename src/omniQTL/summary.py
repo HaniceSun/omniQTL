@@ -558,7 +558,7 @@ class Summary:
         plt.tight_layout()
         plt.savefig(f'{in_file.split(".txt")[0]}_{out_suffix}.pdf')
 
-    def prs_overlap_with_sig_qtl(self, in_file, in_file2, flank=1e6):
+    def prs_overlap_with_qtl(self, in_file, in_file2, flank=1e6, non_sig=False, params={'p_col': 'nom_pval', 'p_threshold': 0.05}):
         df = pd.read_table(in_file, header=0, sep=',')
         tb = tabix.open(in_file2)
         df2_cols = pd.read_table(in_file2, header=0, sep='\t', nrows=1).columns
@@ -581,5 +581,7 @@ class Summary:
         if len(L) > 0:
             df = pd.concat(L, axis=0)
             out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_overlap.txt'
+            if non_sig:
+                out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_non_sig_overlap.txt'
+                df = df[df[params['p_col']] > params['p_threshold']]
             df.to_csv(out_file, index=False, sep='\t')
-
