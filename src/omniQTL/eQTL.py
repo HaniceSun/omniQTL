@@ -7,12 +7,12 @@ class EQTL(QTL, SeqQC):
         super().__init__()
         self.QTLtools_env = QTLtools_env
 
-    def genome_indexing(self, fa_file='GRCh38.fa', gtf_file='GRCh38.115.gtf', genome_indexed_dir='GRCh38_STAR', out_file='indexing_genome.sh', n_threads=4, sjdbOverhang=100):
-        cmd = f'STAR --runThreadN {n_threads} --runMode genomeGenerate --genomeDir {genome_indexed_dir} --genomeFastaFiles {fa_file} --sjdbGTFfile {gtf_file} --sjdbOverhang {sjdbOverhang}'
+    def genome_indexing(self, fa_file='GRCh38.fa', gtf_file='GRCh38.115.gtf', genome_dir='GRCh38_STAR', out_file='indexing_genome.sh', n_threads=4, sjdbOverhang=100):
+        cmd = f'STAR --runThreadN {n_threads} --runMode genomeGenerate --genomeDir {genome_dir} --genomeFastaFiles {fa_file} --sjdbGTFfile {gtf_file} --sjdbOverhang {sjdbOverhang}'
         with open(out_file, 'w') as out:
             out.write(cmd + '\n')
 
-    def ranseq_mapping(self, out_file='mapping.sh', fq_dir='.', n_threads=4, flag='NH HI AS nM XS'):
+    def ranseq_mapping(self, out_file='mapping.sh', fq_dir='.', n_threads=4, flag='NH HI AS nM XS', genome_dir='GRCh38_STAR'):
         self.samples = []
         fqs = sorted([x for x in os.listdir(fq_dir) if x.endswith('.fq.gz') or x.endswith('.fastq.gz')])
         D = {}
@@ -41,7 +41,7 @@ class EQTL(QTL, SeqQC):
                     self.paired_end = False
                 else:
                     raise ValueError(f'check fastq file names of {sample}')
-                cmd = f'STAR --runThreadN {n_threads} --runMode alignReads --genomeDir {self.genome_dir} --readFilesIn {fs} --readFilesCommand zcat --outFileNamePrefix {sample}_ --outSAMtype BAM SortedByCoordinate --outReadsUnmapped Fastx --outSAMattributes {flag}; samtools index {sample}_Aligned.sortedByCoord.out.bam'
+                cmd = f'STAR --runThreadN {n_threads} --runMode alignReads --genomeDir {genome_dir} --readFilesIn {fs} --readFilesCommand zcat --outFileNamePrefix {sample}_ --outSAMtype BAM SortedByCoordinate --outReadsUnmapped Fastx --outSAMattributes {flag}; samtools index {sample}_Aligned.sortedByCoord.out.bam'
                 outfile.write(cmd + '\n')
                 self.samples.append(sample)
 

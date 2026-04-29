@@ -397,11 +397,11 @@ class Summary:
         df = pd.DataFrame(L, columns=['file', 'annotation', 'in_count', 'out_count'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def test_enrichment_using_fisher_exact(self, in_file='QTL_variants_regulatory_count.txt'):
+    def test_enrichment_using_fisher_exact(self, in_file='QTL_variants_regulatory_count.txt', idx_qtl=0):
         out_file = in_file.replace('.txt', '_enrichment.txt')
         L = []
         df = pd.read_table(in_file, header=0, sep='\t')
-        df['qtl_type'] = [x.split('_')[0] for x in df['file']]
+        df['qtl_type'] = [x.split('_')[idx_qtl] for x in df['file']]
         df['order'] = [1 if x.find('non_sig') != -1 else 0 for x in df['file']]
         df.sort_values('order', inplace=True)
         for gi, g in df.groupby(['qtl_type', 'annotation']):
@@ -558,7 +558,7 @@ class Summary:
         plt.tight_layout()
         plt.savefig(f'{in_file.split(".txt")[0]}_{out_suffix}.pdf')
 
-    def prs_overlap_with_qtl(self, in_file, in_file2, flank=1e6, non_sig=False, params={'p_col': 'nom_pval', 'p_threshold': 0.05}):
+    def prs_overlap_with_qtl(self, in_file, in_file2, flank=1e6):
         df = pd.read_table(in_file, header=0, sep=',')
         tb = tabix.open(in_file2)
         df2_cols = pd.read_table(in_file2, header=0, sep='\t', nrows=1).columns
@@ -581,7 +581,105 @@ class Summary:
         if len(L) > 0:
             df = pd.concat(L, axis=0)
             out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_overlap.txt'
-            if non_sig:
-                out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_non_sig_overlap.txt'
-                df = df[df[params['p_col']] > params['p_threshold']]
             df.to_csv(out_file, index=False, sep='\t')
+
+    def count_overlap_with_prs(self, in_files=['t2dp_suzuki24_ma_eQTL_nominal-1.0_w1M_PC25_extraInfo_sig_overlap.txt'], out_file='QTL_variants_prs_count_t2dp_suzuki24.txt', fsep='_ma_'):
+        L = []
+        for f in in_files:
+            sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_sig_variants.txt') 
+            non_sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_non_sig_variants.txt') 
+            sig_variants = set(pd.read_table(sig_variants_file, header=None, sep='\t').iloc[:, 0].values)
+            non_sig_variants = set(pd.read_table(non_sig_variants_file, header=None, sep='\t').iloc[:, 0].values)
+
+            f_all = f.replace('_sig_overlap.txt', '_overlap.txt')
+            f_non_sig = f.replace('_sig_overlap.txt', '_non_sig_overlap.txt')
+            df_sig = pd.read_table(f, header=0, sep='\t')
+            df_all = pd.read_table(f_all, header=0, sep='\t')
+
+            for g in df_all['group'].unique():
+                df_sig_sub = df_sig[(df_sig['group'] == g) & df_sig['var_id'].isin(sig_variants)] 
+                df_non_sig_sub = df_all[(df_all['group'] == g) & df_all['var_id'].isin(non_sig_variants)]
+                n_sig = df_sig_sub['var_id'].nunique()
+                n_non_sig = df_non_sig_sub['var_id'].nunique()
+                L.append([f, g, n_sig, len(sig_variants) - n_sig])
+                L.append([f_non_sig, g, n_non_sig, len(non_sig_variants) - n_non_sig])
+        df = pd.DataFrame(L)
+        df.columns = ['file', 'annotation', 'in_count', 'out_count']
+        df.to_csv(out_file, index=False, sep='\t')
+
+    def count_overlap_sig_pair_eQTL_GTEx(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', in_files=['GTEx_Analysis_v11_eQTL/Adipose_Subcutaneous.v11.eQTLs.signif_pairs.parquet'], out_file='QTL_sig_pair_overlap_gtex_count.txt', cols=['file', 'eQTL_sig_pair_count', 'GTEx_sig_pair_count', 'overlap_count']):
+        df = pd.read_table(in_file, header=0, sep='\t')
+        pairs = []
+        for n in range(df.shape[0]):
+            gene_id = df['phe_id'].iloc[n].split('_')[0]
+            chrom = df['var_chr'].iloc[n]
+            pos = df['var_from'].iloc[n]
+            ref = df['non_effective_allele'].iloc[n]
+            alt = df['effective_allele'].iloc[n]
+            pair = f'{gene_id}_{chrom}_{pos}_{ref}_{alt}'
+            pairs.append(pair)
+        df['pair'] = pairs
+
+        L = []
+        for f in in_files:
+            print('processing ' + f + '...', flush=True)
+            df2 = pd.read_parquet(f)
+            pairs = []
+            for n in range(df2.shape[0]):
+                gene_id = df2['phenotype_id'].iloc[n].split('.')[0]
+                var_id = '_'.join(df2['variant_id'].iloc[n].split('_')[0:-1])
+                pair = f'{gene_id}_{var_id}'
+                pairs.append(pair)
+            df2['pair'] = pairs
+            L.append([os.path.basename(f), df['pair'].nunique(), df2['pair'].nunique(), df2['pair'].isin(df['pair']).sum()])
+        df_out = pd.DataFrame(L, columns=cols)
+        df_out.to_csv(out_file, index=False, sep='\t')
+
+    def bar_plot_overlap_eQTL_GTEx(self, in_file='QTL_sig_pair_overlap_gtex_count.txt', cmap='Dark2', title='Overlap between eQTL and GTEx', subset_renaming_file='subset_renaming.txt', ratio_base='GTEx_sig_pair_count', figsize=(4, 4)):
+        out_file = in_file.replace('.txt', '_barplot.pdf')
+        D = {}
+        if os.path.exists(subset_renaming_file):
+            df_subset = pd.read_table(subset_renaming_file, header=None, sep='\t')
+            D = dict(zip(df_subset.iloc[:, 0], df_subset.iloc[:, 1]))
+        df = pd.read_table(in_file, header=0, sep='\t')
+        if D:
+            df['Tissue'] = df['file'].map(D)
+            df.dropna(subset=['Tissue'], inplace=True)
+        else:
+            df['Tissue'] = [x.split('_')[0] for x in df['file']]
+        df['ratio'] = df['overlap_count']/df[ratio_base] * 100
+        df.sort_values('ratio', inplace=True, ascending=False)
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot()
+        sns.barplot(x='Tissue', y='ratio', data=df, ax=ax, palette=cmap, hue='Tissue', legend=False)
+        ax.set_ylabel('Percent of significant gene-variant pairs')
+        ax.set_xlabel('')
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+        ax.set_title(title)
+        plt.tight_layout()
+        plt.savefig(out_file)
+
+    def get_overlap_sig_pair_pQTL_UKBBplasma(self, in_file='pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', in_file2='UKB-PPP_pQTL_Euro_sig_rsID.txt.gz'):
+        df = pd.read_table(in_file, header=0, sep='\t')
+        df2 = pd.read_table(in_file2, header=0, sep='\t')
+
+        pairs = []
+        for n in range(df.shape[0]):
+            gene = df['phe_id'].iloc[n].split('_')[-1]
+            rs = df['var_id'].iloc[n]
+            pair = f'{gene}_{rs}'
+            pairs.append(pair)
+        df['pair'] = pairs
+
+        pairs2 = []
+        for n in range(df2.shape[0]):
+            gene = df2['Gene'].iloc[n]
+            rs = df2['rsID'].iloc[n]
+            pair = f'{gene}_{rs}'
+            pairs2.append(pair)
+        df2['pair'] = pairs2
+
+        df = pd.merge(df, df2, on='pair', how='inner')
+        out_file = in_file.split('.txt.gz')[0] + '_' + in_file2
+        df.to_csv(out_file, index=False, sep='\t')
