@@ -327,7 +327,7 @@ class QTL:
             df_ranks.columns = ['feature', 'n_independent_signals']
             df_ranks.sort_values(by='n_independent_signals', inplace=True)
             df_ranks.to_csv(out_file_ranks, header=True, index=False, sep='\t')
-        cmd = f'head -n 1 {out_file} > {out_file_txt}; tail -n +2 {out_file} | sort -k2,2V -k 3,3n >> {out_file_txt}; bgzip {out_file_txt}; tabix -s 2 -b 3 -e 3 -S 1 {out_file_txt}.gz; rm {out_file}'
+        cmd = f'head -n 1 {out_file} > {out_file_txt}; tail -n +2 {out_file} | sort -k2,2V -k 3,3n >> {out_file_txt}; bgzip -f {out_file_txt}; tabix -s 2 -b 3 -e 3 -S 1 {out_file_txt}.gz; rm {out_file}'
         print(cmd)
         subprocess.run(cmd, shell=True)
     

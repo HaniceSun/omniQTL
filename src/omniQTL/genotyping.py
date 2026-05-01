@@ -34,7 +34,7 @@ class Genotyping(ArrayQC):
         
         vcfs = sorted([f'{out_dir}/{f}' for f in os.listdir(out_dir) if f.endswith('.vcf')])
         for vcf in vcfs:
-            cmd = f'bgzip {vcf}; tabix -p vcf {vcf}.gz'
+            cmd = f'bgzip -f {vcf}; tabix -p vcf {vcf}.gz'
             print(cmd)
             subprocess.run(cmd, shell=True)
 
