@@ -220,6 +220,7 @@ class EQTL(QTL, SeqQC):
         df4 = pd.concat(L, axis=1)
         if np.sum(np.array(n_features) != n_features[0]) > 0:
             raise ValueError('number of features in the counts tables are different')
+        df4.drop_duplicates(inplace=True)
         df4.to_csv(out_file, sep='\t', index=False)
 
     def get_exonPSI(self, in_file='sQTL_exonIRER.txt'):
@@ -268,12 +269,17 @@ class EQTL(QTL, SeqQC):
 
         out_file = in_file.replace('.txt', '_geneName.txt')
         D = {}
+        G = {}
         with open(exon_table) as f:
             for line in f:
                 line = line.strip()
                 fields = line.split('\t')
                 exonID = '_'.join(fields[1:4])
+                geneID = fields[4]
+                geneName = fields[5]
                 D[exonID] = fields[1:4] + fields[0:1] + fields[4:6]
+                G[geneID] = geneName
+
         with open(in_file, 'r') as f, open(out_file, 'w') as fout:
             head = f.readline().strip().split('\t')
             fout.write('ExonID\tGeneName\t'+'\t'.join(head[6:])+'\n')
@@ -281,10 +287,12 @@ class EQTL(QTL, SeqQC):
                 line = line.strip()
                 fields = line.split('\t')
                 exonID = 'chr' + '_'.join(fields[1:4])
+                geneID = fields[0]
+                geneName = G.get(geneID, geneID)
                 if exonID in D:
                     fout.write('\t'.join(['_'.join(D[exonID][0:-1]), D[exonID][-1]] + fields[6:]) + '\n')
                 else:
-                    fout.write('\t'.join([exonID, exonID] + fields[6:]) + '\n')
+                    fout.write('\t'.join([exonID + '_NA_' + geneID, geneName] + fields[6:]) + '\n')
 
     def counts_to_tpm(self, counts_table='eQTL_geneCounts_geneName.txt', counts_sample='sample_geneCounts.txt', sample_start_idx=2, length_col='Length', norm_base=1e6):
         '''
@@ -304,6 +312,10 @@ class EQTL(QTL, SeqQC):
         else:
             if length_col in df1:
                 Length = df1[length_col]
+                print(f'Normalized by the {length_col} column')
+            elif 'ExonID' in df1.columns:
+                Length = [int(x.split('_')[2]) - int(x.split('_')[1]) + 1 for x in df1['ExonID']]
+                print('Normalized by the Exon Length calculated from the ExonID column')
             else:
                 Length = [1] * df1.shape[0]
                 print('Warning: Not normalized by Length!')
