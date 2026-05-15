@@ -280,7 +280,8 @@ class EQTL(QTL, SeqQC):
                 geneName = fields[5]
                 if exonID not in D:
                     D[exonID] = fields[1:4] + fields[0:1] + fields[4:6]
-                G[geneID] = geneName
+                if geneID not in G:
+                    G[geneID] = geneName
 
         with open(in_file, 'r') as f, open(out_file, 'w') as fout:
             head = f.readline().strip().split('\t')
