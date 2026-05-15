@@ -294,43 +294,37 @@ class EQTL(QTL, SeqQC):
                 else:
                     fout.write('\t'.join([exonID + '_NA_' + geneID, geneName] + fields[6:]) + '\n')
 
-    def counts_to_tpm(self, counts_table='eQTL_geneCounts_geneName.txt', counts_sample='sample_geneCounts.txt', sample_start_idx=2, length_col='Length', norm_base=1e6):
+    def counts_to_tpm(self, counts_table='eQTL_geneCounts_geneName.txt', counts_sample='sample_geneCounts.txt', sample_start_idx=2, norm_base=1e6):
         '''
         the same as edger, TPM <- t(t(RPKM) / colSums(RPKM)) * 1e6
         '''
         Length = []
         df1 = pd.read_table(counts_table, header=0)
-        if counts_sample:
+        if counts_sample and os.path.exists(counts_sample):
             df2 = pd.read_table(counts_sample, header=0, comment='#')
             if df1.shape[0] == df2.shape[0]:
                 wh = df1.iloc[:, 0] == df2.iloc[:, 0]
                 if wh.all():
-                    if length_col in df2.columns:
-                        Length = df2[length_col]
+                    if 'Length' in df2.columns:
+                        Length = df2['Length']
                 else:
                     raise ValueError('Feature and Length are not the same version')
+        elif 'ExonID' in df1.columns:
+            Length = [int(x.split('_')[2]) - int(x.split('_')[1]) + 1 for x in df1['ExonID']]
+            print('Normalized by the Exon Length calculated from the ExonID column')
         else:
-            if length_col in df1:
-                Length = df1[length_col]
-                print(f'Normalized by the {length_col} column')
-            elif 'ExonID' in df1.columns:
-                Length = [int(x.split('_')[2]) - int(x.split('_')[1]) + 1 for x in df1['ExonID']]
-                print('Normalized by the Exon Length calculated from the ExonID column')
-            else:
-                Length = [1] * df1.shape[0]
-                print('Warning: Not normalized by Length!')
+            Length = [1] * df1.shape[0]
+            print('Warning: Not normalized by Length!')
+
+        out_file = counts_table.split('.txt')[0] + '_TPM.txt'
 
         mat = df1.iloc[:, sample_start_idx:]
         mat2 = df1.iloc[:, 0:sample_start_idx]
-        out_file = counts_table.split('.txt')[0] + '_TPM.txt'
 
-        if len(Length):
-            matTotalRaw = mat.sum(axis=0)
-            print(f'Total Reads (million):\n{matTotalRaw/norm_base}')
-            matLength = (mat.T/Length).T
-            matTotal = matLength.sum(axis=0)
-            M = matLength/matTotal*norm_base
-            df = pd.concat([mat2, M], axis=1)
-            df.to_csv(out_file, header=True, index=False, sep='\t', float_format='%.4f')
-        else:
-            raise ValueError('Length is not found')
+        matTotalRaw = mat.sum(axis=0)
+        print(f'Total Reads (million):\n{matTotalRaw/norm_base}')
+        matLength = (mat.T/Length).T
+        matTotal = matLength.sum(axis=0)
+        M = matLength/matTotal*norm_base
+        df = pd.concat([mat2, M], axis=1)
+        df.to_csv(out_file, header=True, index=False, sep='\t', float_format='%.4f')
