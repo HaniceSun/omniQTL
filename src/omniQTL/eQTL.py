@@ -282,7 +282,7 @@ class EQTL(QTL, SeqQC):
                 fields = line.split('\t')
                 exonID = 'chr' + '_'.join(fields[1:4])
                 if exonID in D:
-                    fout.write('\t'.join(['_'.join(D[exonID]), D[exonID][-1]] + fields[6:]) + '\n')
+                    fout.write('\t'.join(['_'.join(D[exonID][0:-1]), D[exonID][-1]] + fields[6:]) + '\n')
                 else:
                     fout.write('\t'.join([exonID, exonID] + fields[6:]) + '\n')
 
