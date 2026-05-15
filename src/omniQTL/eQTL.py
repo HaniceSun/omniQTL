@@ -220,7 +220,8 @@ class EQTL(QTL, SeqQC):
         df4 = pd.concat(L, axis=1)
         if np.sum(np.array(n_features) != n_features[0]) > 0:
             raise ValueError('number of features in the counts tables are different')
-        df4.drop_duplicates(inplace=True)
+        if counts_type == 'exon':
+            df4.drop_duplicates(subset=['Chr', 'Start', 'End', 'Strand'], inplace=True)
         df4.to_csv(out_file, sep='\t', index=False)
 
     def get_exonPSI(self, in_file='sQTL_exonIRER.txt'):
@@ -277,7 +278,8 @@ class EQTL(QTL, SeqQC):
                 exonID = '_'.join(fields[1:4])
                 geneID = fields[4]
                 geneName = fields[5]
-                D[exonID] = fields[1:4] + fields[0:1] + fields[4:6]
+                if exonID not in D:
+                    D[exonID] = fields[1:4] + fields[0:1] + fields[4:6]
                 G[geneID] = geneName
 
         with open(in_file, 'r') as f, open(out_file, 'w') as fout:
