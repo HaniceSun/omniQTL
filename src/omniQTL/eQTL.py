@@ -226,17 +226,22 @@ class EQTL(QTL, SeqQC):
 
     def get_exonPSI(self, in_file='sQTL_exonIRER.txt'):
         out_file = in_file.split('.txt')[0] + '_PSI.txt'
-        with open(in_file) as f, open(out_file, 'w') as fout:
+        out_file2 = in_file.replace('exonIRER.txt', 'exonPSI.txt')
+        with open(in_file) as f, open(out_file, 'w') as fout, open(out_file2, 'w') as fout2:
             head = f.readline().strip().split('\t')
             H = head
+            H2 = ['ExonID', 'GeneName']
             for n in range(6, len(head), 2):
                 H.append(head[n].split('_IR')[0] + '_PSI')
+                H2.append(head[n].split('_IR')[0] + '_PSI')
             fout.write('\t'.join(H) + '\n')
+            fout2.write('\t'.join(H2) + '\n')
 
             for line in f:
                 line = line.strip()
                 fields = line.split('\t')
                 L = fields
+                L2 = ['_'.join(fields[1:4] + fields[0:1] + fields[4:5]), fields[5]]
                 for n in range(6, len(fields), 2):
                     IR = float(fields[n])
                     ER = float(fields[n + 1])
@@ -245,7 +250,9 @@ class EQTL(QTL, SeqQC):
                     else:
                         PSI = IR/(IR + ER)
                     L.append(f'{PSI:.4f}')
+                    L2.append(f'{PSI:.4f}')
                 fout.write('\t'.join(L) + '\n')
+                fout2.write('\t'.join(L2) + '\n')
 
     def annotate_gene_name(self, gene_table='GRCh38.115_GenePosType.txt', in_file='eQTL_geneCounts.txt'):
         if not os.path.exists(gene_table):
