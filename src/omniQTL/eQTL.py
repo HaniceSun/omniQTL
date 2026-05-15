@@ -64,6 +64,110 @@ class EQTL(QTL, SeqQC):
                 else:
                     cmd = f'featureCounts -J -f -t exon -O -T {n_threads} -s {strand} -Q {min_quality} -a {gtf_file} -o {sample}_exonCounts.txt {bam}'
 
+    def get_exonIRER(self, exon_counts_dir='IRER', exon_table='Homo_sapiens.GRCh38.115.Exons', chrom='chr', suffix='.bam', knownJuncsOnly=True):
+        exonCountsTables = [f'{exon_counts_dir}/{x}' for x in os.listdir(exon_counts_dir) if x.endswith('_exonCounts.txt')]
+        for exonCountsTable in sorted(exonCountsTables):
+            print(f'processing {exonCountsTable}', flush=True)
+            jcountsTable = exonCountsTable.replace('_exonCounts.txt', '_jcounts.txt')
+            IR = {}
+            ER = {}
+            JC = {}
+            EL = []
+            knownJuncs = {}
+            if knownJuncsOnly:
+                with open(exon_table) as f:
+                    for line in f:
+                        line = line.strip()
+                        fields = line.split('\t')
+                        k1 = fields[1] + ':' + fields[2]
+                        k2 = fields[1] + ':' + fields[3]
+                        knownJuncs[k1] = True
+                        knownJuncs[k2] = True
+        
+            with open(jcountsTable) as f:
+                head = f.readline().strip().split('\t')
+                sampleExon = [x.split(suffix)[0] for x in head[8:]]
+                for line in f:
+                    line = line.strip()
+                    fields = line.split('\t')
+                    if knownJuncsOnly:
+                        k1 = chrom + fields[2] + ':' + fields[3]
+                        k2 = chrom + fields[2] + ':' + fields[6]
+                        if k1 in knownJuncs and k2 in knownJuncs:
+                            if fields[0] != 'NA':
+                                for k in fields[0].split(','):
+                                    JC.setdefault(k, [])
+                                    JC[k].append(fields)
+                            if fields[1] != 'NA':
+                                for k in fields[1].split(','):
+                                    JC.setdefault(k, [])
+                                    JC[k].append(fields)
+                    else:
+                        if fields[0] != 'NA':
+                            for k in fields[0].split(','):
+                                JC.setdefault(k, [])
+                                JC[k].append(fields)
+                        if fields[1] != 'NA':
+                            for k in fields[1].split(','):
+                                JC.setdefault(k, [])
+                                JC[k].append(fields)
+
+            with open(exonCountsTable) as f:
+                for line in f:
+                    line = line.strip()
+                    fields = line.split('\t')
+                    if line[0] != '#':
+                        if fields[0] =='Geneid':
+                            sampleExon2 = [x.split(suffix)[0] for x in fields[6:]]
+                        else:
+                            k = '\t'.join(['chr' + fields[1], fields[2], fields[3]])
+                            IR[k] = fields[6:]
+            
+            if sampleExon != sampleExon2:
+                raise ValueError('samples inconsistent!')
+        
+            with open(exon_table) as f:
+                for line in f:
+                    line = line.strip()
+                    fields = line.split('\t')
+                    EL.append(fields)
+                    exonID = fields[0]
+                    geneID = fields[4]
+                    ch = fields[1]
+                    start = int(fields[2])
+                    end = int(fields[3])
+                    JCL = np.array([0]*len(sampleExon))
+                    if geneID in JC:
+                        for item in JC[geneID]:
+                            s1_ch = item[2]
+                            s2_ch = item[5]
+                            if chrom:
+                                s1_ch = 'chr' + item[2]
+                                s2_ch = 'chr' + item[5]
+                            s1_pos = int(item[3])
+                            s1_strand = item[4]
+                            s2_pos = int(item[6])
+                            s2_strand = item[7]
+                            SampleCounts = np.array([int(x) for x in item[8:]])
+                            if s1_ch == ch and s2_ch == ch:
+                                if s1_pos < start and s2_pos > end:
+                                    JCL += SampleCounts
+                    ER[exonID] = JCL
+            
+            out_file = exonCountsTable.replace('_exonCounts.txt', '_exonIRER.txt')
+            with open(out_file, 'w') as f:
+                f.write('ExonID\tChr\tStart\tEnd\tGeneID\tGeneName' + '\t' + '\t'.join(['%s_IR\t%s_ER'%(x, x) for x in sampleExon]) + '\n')
+                for E in EL:
+                    k = '\t'.join([E[1], E[2], E[3]])
+                    if k in IR and E[0] in ER:
+                        f.write('\t'.join(E) + '\t' + '\t'.join([str(IR[k][n] + '\t' + str(ER[E[0]][n])) for n in range(0, len(IR[k]))]) + '\n')
+                    elif k in IR:
+                        f.write('\t'.join(E) + '\t' + '\t'.join([str(IR[k][n] + '\t' + '-1') for n in range(0, len(IR[k]))]) + '\n')
+                    elif E[0] in ER:
+                        f.write('\t'.join(E) + '\t' + '\t'.join(['-1' + '\t' + str(ER[E[0]][n]) for n in range(0, len(ER[E[0]]))]) + '\n')
+                    else:
+                        f.write('\t'.join(E) + '\t' + '\t'.join(['-1' + '\t' + '-1' for x in sampleExon]) + '\n')
+
     def merge_counts_tables(self, counts_tables='counts_tables.txt', out_file='eQTL_geneCounts.txt'):
         df_tables = pd.read_table(counts_tables, header=None, low_memory=False)
         L = []
@@ -79,7 +183,7 @@ class EQTL(QTL, SeqQC):
             sample = f.split('/')[-1].split('_' + counts_type)[0]
 
             if counts_type == 'gene':
-                df2 = pd.read_table(f, header=0, comment='#')
+                df2 = pd.read_table(f, header=0, comment='#', low_memory=False)
                 n_features.append(df2.shape[0])
                 if n == 0:
                     df3 = df2.iloc[:, [0, 6]]
@@ -90,7 +194,7 @@ class EQTL(QTL, SeqQC):
                     df3.name = sample
                     L.append(df3)
             elif counts_type == 'exon':
-                df2 = pd.read_table(f, header=0, comment='#')
+                df2 = pd.read_table(f, header=0, comment='#', low_memory=False)
                 n_features.append(df2.shape[0])
                 if n == 0:
                     df3 = df2.iloc[:, 0:7]
