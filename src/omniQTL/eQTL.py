@@ -222,6 +222,29 @@ class EQTL(QTL, SeqQC):
             raise ValueError('number of features in the counts tables are different')
         df4.to_csv(out_file, sep='\t', index=False)
 
+    def get_exonPSI(self, in_file='sQTL_exonIRER.txt'):
+        out_file = in_file.split('.txt')[0] + '_PSI.txt'
+        with open(in_file) as f, open(out_file, 'w') as fout:
+            head = f.readline().strip().split('\t')
+            H = head
+            for n in range(6, len(head), 2):
+                H.append(head[n].split('_IR')[0] + '_PSI')
+            fout.write('\t'.join(H) + '\n')
+
+            for line in f:
+                line = line.strip()
+                fields = line.split('\t')
+                L = fields
+                for n in range(6, len(fields), 2):
+                    IR = float(fields[n])
+                    ER = float(fields[n + 1])
+                    if IR + ER == 0:
+                        PSI = (IR + 1)/(IR + ER + 1)
+                    else:
+                        PSI = IR/(IR + ER)
+                    L.append(f'{PSI:.4f}')
+                fout.write('\t'.join(L) + '\n')
+
     def annotate_gene_name(self, gtf_file='GRCh38.115.gtf', in_file='eQTL_geneCounts.txt'):
         gene_table = gtf_file.replace('.gtf', '_GenePosType.txt')
         if not os.path.exists(gene_table):
