@@ -133,7 +133,8 @@ class Summary:
         df = pd.DataFrame(L, columns=['peak_type', 'sample', 'number_of_peaks'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', out_file='caQTL_number_raw_peaks_boxplot.pdf', cmap='Blues', ylabel='Number of raw peaks (million)', add_stripplot=False, figsize=(4, 4)):
+    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', cmap='Blues', ylabel='Number of raw peaks (million)', add_stripplot=False, figsize=(4, 4)):
+        out_file = in_file.split('.txt')[0] + '_boxplot.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()

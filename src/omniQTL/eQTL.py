@@ -67,8 +67,8 @@ class EQTL(QTL, SeqQC):
     def get_exonIRER(self, exon_counts_dir='IRER', exon_table='Homo_sapiens.GRCh38.115.Exons', chrom='chr', suffix='.bam', knownJuncsOnly=True):
         exonCountsTables = [f'{exon_counts_dir}/{x}' for x in os.listdir(exon_counts_dir) if x.endswith('_exonCounts.txt')]
         for exonCountsTable in sorted(exonCountsTables):
-            print(f'processing {exonCountsTable}', flush=True)
             jcountsTable = exonCountsTable.replace('_exonCounts.txt', '_jcounts.txt')
+            print(f'processing {exonCountsTable} and {jcountsTable}', flush=True)
             IR = {}
             ER = {}
             JC = {}
@@ -206,9 +206,7 @@ class EQTL(QTL, SeqQC):
                     L.append(df3)
         df4 = pd.concat(L, axis=1)
         if np.sum(np.array(n_features) != n_features[0]) > 0:
-            raise ValueError('check the number of features in the counts tables')
-        else:
-            print('The number of features in the counts tables is the same')
+            raise ValueError('number of features in the counts tables are different')
         df4.to_csv(out_file, sep='\t', index=False)
 
     def annotate_gene_name(self, gtf_file='GRCh38.115.gtf', in_file='eQTL_geneCounts.txt'):

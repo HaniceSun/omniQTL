@@ -394,6 +394,7 @@ class GenomeTrackPlot():
         wh2 = df['geneBiotype'].isin(geneBiotype_include)
         wh3 = ~df['geneName'].isin(geneName_exclude)
         df_sub = df[wh1 & wh2 & wh3]
+        df_sub['name'] = df_sub['geneName']
         if canonical_only:
             wh = np.array([True if x.find('canonical') != -1 else False for x in df_sub['tag']])
             df_sub = df_sub[wh]
@@ -433,6 +434,33 @@ class GenomeTrackPlot():
             cmd = f'conda run -n {conda_env} ' + cmd
         print(cmd)
         subprocess.run(cmd, shell=True)
+
+    def qtl_txt_to_bed(self, in_file='eQTL.txt.gz', window=[], gene='PTFRN', p_col='nom_pval', p_min=1e-300, cols=['var_chr', 'var_from', 'var_to', 'pv']):
+        if os.path.exists(in_file):
+            header = pd.read_table(in_file, header=0, nrows=0, sep='\t').columns
+        else:
+            raise FileNotFoundError(f'{in_file} not found.')
+        tb = tabix.open(in_file)
+        chrom = window[0]
+        x_min = window[1]
+        x_max = window[2]
+        res = tb.query(chrom, x_min, x_max)
+        out_file = in_file.replace('.txt.gz', f'_{gene}.bed')
+        if res:
+            df = pd.DataFrame(res)
+            df.columns = header
+            wh = [True if gene in x.split('_')[-1].split(',') else False for x in df.iloc[:, 0]]
+            df = df[wh]
+            df.sort_values(p_col, inplace=True)
+            df.drop_duplicates(subset=['var_id'], keep='first', inplace=True)
+            df['pval'] = np.clip(df[p_col].astype(float), a_min=p_min, a_max=None)
+            df['pv'] = -np.log10(df['pval'])
+            df.sort_values(cols, inplace=True)
+            df[cols].to_csv(out_file, sep='\t', index=None, header=None)
+            cmd = f'bgzip -f {out_file}; tabix -f -p bed {out_file}.gz'
+            subprocess.run(cmd, shell=True)
+        else:
+            print(f'No data found in {in_file} for the given window and gene.')
 
 if __name__ == '__main__':
     def plot_locus(gene='PTGFRN', var_id='rs1127215'):

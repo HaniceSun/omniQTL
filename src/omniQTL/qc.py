@@ -110,7 +110,7 @@ class SeqQC:
         df.sort_values(by='percent_mapped_reads', inplace=True)
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(6, 4), base=1e6, paired=True, cmap='Set2'):
+    def plot_number_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(4, 4), base=1e6, paired=True, cmap='Set2', paired_count=2, line_plot=False):
         out_file = in_file.split('.txt')[0] + '_plot.pdf'
         df = pd.read_table(in_file, sep='\t')
         batch = False
@@ -122,14 +122,20 @@ class SeqQC:
                 batch = True
                 hue_order = sorted(df['batch'].unique())
         if paired:
-            df['number_of_reads'] = df['number_of_reads'].astype(int)/base/2
+            df['number_of_reads'] = df['number_of_reads'].astype(int)/base/paired_count
 
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         if batch:
-            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
+            if line_plot:
+                sns.lineplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
+            else:
+                sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax, hue='batch', palette=cmap, hue_order=hue_order)
         else:
-            sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax)
+            if line_plot:
+                sns.lineplot(x='sample', y=df.columns[1], data=df, ax=ax)
+            else:
+                sns.barplot(x='sample', y=df.columns[1], data=df, ax=ax)
         if base == 1e6:
             ax.set_ylabel('Number of mapped reads (million)')
         else:
@@ -138,7 +144,7 @@ class SeqQC:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def plot_percent_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(6, 4), cmap='Set2'):
+    def plot_percent_mapped_reads(self, in_file='number_mapped_reads.txt', batch_file=None, figsize=(4, 4), cmap='Set2'):
         out_file = in_file.split('.txt')[0] + '_plot.pdf'
         df = pd.read_table(in_file, sep='\t')
         batch = False
@@ -217,7 +223,7 @@ class SeqQC:
             df_sub = df[df['mean_tss_score'] < score_threshold]
             df_sub.to_csv(out_file_low, index=False, sep='\t')
 
-    def plot_tss_score(self, in_file='ATACseq_tss_score.txt', batch_file=None, figsize=(6, 4), cmap='Set2'):
+    def plot_tss_score(self, in_file='ATACseq_tss_score.txt', batch_file=None, figsize=(4, 4), cmap='Set2'):
         out_file = in_file.split('.txt')[0] + '_plot.pdf'
         df = pd.read_table(in_file, sep='\t')
         batch = False
