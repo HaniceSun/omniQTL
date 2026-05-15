@@ -69,7 +69,7 @@ class QTL:
             df_feat['pid'] = df['peakID'] + '_' + df['closestGene']
             df_feat['gid'] = df['closestGene']
             df_feat['strand'] = '+'
-        elif qtl_type in ['eQTL', 'pQTL']:
+        elif qtl_type in ['eQTL', 'pQTL', 'eQTLexon', 'sQTL']:
             D = {}
             gene_table = gtf_file.replace('.gtf', '_GenePosType.txt')
             if os.path.exists(gene_table):
@@ -83,19 +83,31 @@ class QTL:
 
             L = []
             for n in range(df.shape[0]):
-                gene_id = df.iloc[n, 0]
+                if qtl_type in ['eQTL', 'pQTL']:
+                    gene_id = df.iloc[n, 0]
+                else:
+                    gene_id = df.iloc[n, 0].split('_')[-1]
                 if gene_id in D:
                     gene_name = D[gene_id][1]
                     chrom = D[gene_id][2]
                     if chrom.find('chr') == -1:
                         chrom = 'chr' + chrom
                     strand = D[gene_id][5]
-                    if strand == '+':
-                        start = int(D[gene_id][3]) - 1
-                        end = int(D[gene_id][3])
-                    else:
-                        start = int(D[gene_id][4]) - 1
-                        end = int(D[gene_id][4])
+                    if qtl_type in ['eQTL', 'pQTL']:
+                        if strand == '+':
+                            start = int(D[gene_id][3]) - 1
+                            end = int(D[gene_id][3])
+                        else:
+                            start = int(D[gene_id][4]) - 1
+                            end = int(D[gene_id][4])
+                    elif qtl_type in ['eQTLexon', 'sQTL']:
+                        fields = df.iloc[n, 0].split('_')
+                        if strand == '+':
+                            start = int(fields[1]) - 1
+                            end = int(fields[1])
+                        else:
+                            start = int(fields[2]) - 1
+                            end = int(fields[2])
                     gid = gene_id
                     pid = gene_id + '_' + gene_name
                 else:
