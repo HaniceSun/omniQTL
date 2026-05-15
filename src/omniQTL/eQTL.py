@@ -200,7 +200,7 @@ class EQTL(QTL, SeqQC):
                 n_features.append(df2.shape[0])
                 if n == 0:
                     df3 = df2.iloc[:, 0:7]
-                    df3.columns = ['ExonID', 'Chr', 'Start', 'End', 'Strand', 'Length', sample]
+                    df3.columns = ['GeneID', 'Chr', 'Start', 'End', 'Strand', 'Length', sample]
                     L.append(df3)
                 else:
                     df3 = df2.iloc[:, 6]
@@ -245,25 +245,46 @@ class EQTL(QTL, SeqQC):
                     L.append(f'{PSI:.4f}')
                 fout.write('\t'.join(L) + '\n')
 
-    def annotate_gene_name(self, gtf_file='GRCh38.115.gtf', in_file='eQTL_geneCounts.txt'):
-        gene_table = gtf_file.replace('.gtf', '_GenePosType.txt')
+    def annotate_gene_name(self, gene_table='GRCh38.115_GenePosType.txt', in_file='eQTL_geneCounts.txt'):
         if not os.path.exists(gene_table):
-            raise ValueError(f'gene table {gene_table} is not found, run gtf_to_GenePosType in utils.py on the gtf file first')
+            raise ValueError(f'{gene_table} is not found, run gtf_to_GenePosType in utils.py on the gtf file first')
 
         out_file = in_file.replace('.txt', '_geneName.txt')
-        if os.path.exists(gene_table):
-            df = pd.read_table(gene_table, header=None)
-            D = dict(zip(df[0], df[1]))
+        df = pd.read_table(gene_table, header=None)
+        D = dict(zip(df[0], df[1]))
+        with open(in_file, 'r') as f, open(out_file, 'w') as fout:
+            head = f.readline().strip().split('\t')
+            fout.write('\t'.join(head[0:1] + ['GeneName'] + head[1:]) + '\n')
+            for line in f:
+                line = line.strip()
+                fields = line.split('\t')
+                gene_id = fields[0]
+                gene_name = D.get(gene_id, gene_id)
+                fout.write('\t'.join([gene_id, gene_name] + fields[1:]) + '\n')
 
-            with open(in_file, 'r') as infile, open(out_file, 'w') as outfile:
-                head = infile.readline().strip().split('\t')
-                outfile.write('\t'.join(head[0:1] + ['GeneName'] + head[1:]) + '\n')
-                for line in infile:
-                    line = line.strip()
-                    fields = line.split('\t')
-                    gene_id = fields[0]
-                    gene_name = D.get(gene_id, gene_id)
-                    outfile.write('\t'.join([gene_id, gene_name] + fields[1:]) + '\n')
+    def annotate_exon_name(self, exon_table='GRCh38.115_Exons.txt', in_file='eQTL_exonCounts.txt'):
+        if not os.path.exists(exon_table):
+            raise ValueError(f'{exon_table} is not found')
+
+        out_file = in_file.replace('.txt', '_geneName.txt')
+        D = {}
+        with open(exon_table) as f:
+            for line in f:
+                line = line.strip()
+                fields = line.split('\t')
+                exonID = '_'.join(fields[1:4])
+                D[exonID] = fields[1:4] + fields[0:1] + fields[4:6]
+        with open(in_file, 'r') as f, open(out_file, 'w') as fout:
+            head = f.readline().strip().split('\t')
+            fout.write('ExonID\tGeneName\t'+'\t'.join(head[6:])+'\n')
+            for line in f:
+                line = line.strip()
+                fields = line.split('\t')
+                exonID = 'chr' + '_'.join(fields[1:4])
+                if exonID in D:
+                    fout.write('\t'.join(['_'.join(D[exonID]), D[exonID][-1]] + fields[6:]) + '\n')
+                else:
+                    fout.write('\t'.join([exonID, exonID] + fields[6:]) + '\n')
 
     def counts_to_tpm(self, counts_table='eQTL_geneCounts_geneName.txt', counts_sample='sample_geneCounts.txt', sample_start_idx=2, length_col='Length', norm_base=1e6):
         '''
