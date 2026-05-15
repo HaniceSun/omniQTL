@@ -178,10 +178,12 @@ class EQTL(QTL, SeqQC):
                 counts_type = 'gene'
             elif f.split('/')[-1].find('exonCounts') != -1:
                 counts_type = 'exon'
+            elif f.split('/')[-1].find('exonIRER') != -1:
+                counts_type = 'exonIRER'
             else:
                 raise ValueError('check type of the counts tables')
-            sample = f.split('/')[-1].split('_' + counts_type)[0]
 
+            sample = f.split('/')[-1].split('_' + counts_type)[0]
             if counts_type == 'gene':
                 df2 = pd.read_table(f, header=0, comment='#', low_memory=False)
                 n_features.append(df2.shape[0])
@@ -203,6 +205,17 @@ class EQTL(QTL, SeqQC):
                 else:
                     df3 = df2.iloc[:, 6]
                     df3.name = sample
+                    L.append(df3)
+            elif counts_type == 'exonIRER':
+                df2 = pd.read_table(f, header=0, comment='#', low_memory=False)
+                n_features.append(df2.shape[0])
+                if n == 0:
+                    df3 = df2.iloc[:, 0:8]
+                    df3.columns = ['ExonID', 'Chr', 'Start', 'End', 'GeneID', 'GeneName', f'{sample}_IR', f'{sample}_ER']
+                    L.append(df3)
+                else:
+                    df3 = df2.iloc[:, 6:8]
+                    df3.columns = [f'{sample}_IR', f'{sample}_ER']
                     L.append(df3)
         df4 = pd.concat(L, axis=1)
         if np.sum(np.array(n_features) != n_features[0]) > 0:
