@@ -230,7 +230,7 @@ class QTL:
             if window_size is None:
                 if qtl_type in ['caQTL']:
                     window_size = 1e3
-                elif qtl_type in ['eQTL', 'pQTL']:
+                elif qtl_type in ['eQTL', 'pQTL', 'eQTLexon', 'sQTL']:
                     window_size = 1e6
             window_size = int(window_size)
             window_size_name_str = self.window_size_name.get(window_size, window_size)
