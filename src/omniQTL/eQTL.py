@@ -338,3 +338,19 @@ class EQTL(QTL, SeqQC):
         M = matLength/matTotal*norm_base
         df = pd.concat([mat2, M], axis=1)
         df.to_csv(out_file, header=True, index=False, sep='\t', float_format='%.4f')
+
+    def filter_PSI_by_variance(self, in_file='sQTL_exonPSI.txt', var_threshold=0.001):
+        if os.path.exists(in_file):
+            df = pd.read_table(in_file, header=0, sep='\t')
+        else:
+            raise FileNotFoundError(f'{in_file} not found.')
+        wh = []
+        for n in range(df.shape[0]):
+            var = np.var(df.iloc[n, 2:].values.astype(float))
+            if var > var_threshold:
+                wh.append(True)
+            else:
+                wh.append(False)
+        df_filtered = df.loc[wh, ]
+        out_file = in_file.replace('.txt', f'_exonFiltered.txt')
+        df_filtered.to_csv(out_file, header=True, index=False, sep='\t')
