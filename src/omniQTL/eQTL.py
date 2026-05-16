@@ -233,7 +233,7 @@ class EQTL(QTL, SeqQC):
             H2 = ['ExonID', 'GeneName']
             for n in range(6, len(head), 2):
                 H.append(head[n].split('_IR')[0] + '_PSI')
-                H2.append(head[n].split('_IR')[0] + '_PSI')
+                H2.append(head[n].split('_IR')[0])
             fout.write('\t'.join(H) + '\n')
             fout2.write('\t'.join(H2) + '\n')
 
