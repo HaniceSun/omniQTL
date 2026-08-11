@@ -154,11 +154,32 @@ class Genotyping(ArrayQC):
         subprocess.run(cmd, shell=True)
         os.chdir(cwd)
 
+    def get_michigan_hla_results(self, cmd, password, out_dir=None, n_threads=4):
+        if out_dir is None:
+            out_dir = f'{self.bfile}_MichiganHLA'
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+        cwd = os.getcwd()
+        os.chdir(out_dir)
+        subprocess.run(cmd, shell=True)
+
+        fs = [f for f in os.listdir('.') if f.find('chr') == 0 and f.endswith('.zip')]
+        for f in fs:
+            cmd = f'unzip -P "{password}" {f}'
+            subprocess.run(cmd, shell=True)
+
+        in_file = f'chr6.dose.vcf.gz'
+        out_file = f'{self.bfile}_imputedHLA.vcf.gz'
+        cmd = f'ln {in_file} {out_file}; plink2 --vcf {out_file} --make-bed --out {out_file.split(".vcf")[0]}'
+        subprocess.run(cmd, shell=True)
+        os.chdir(cwd)
+
     def merge_vcfs(self, vcf_files, output_vcf, n_threads=4, params={'R2':'avg'}):
         params_str = ','.join([f'{key}:{value}' for key, value in params.items()])
         if params_str:
             params_str = f'-i {params_str}'
         cmd = f'bcftools merge -Oz -o {output_vcf} --threads {n_threads} {params_str} {" ".join(vcf_files)}; tabix -p vcf {output_vcf}'
+        print(cmd)
         subprocess.run(cmd, shell=True)
 
     def subset_samples_vcf(self, vcf_file, sample_list, output_vcf, n_threads=4):
