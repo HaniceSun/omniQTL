@@ -170,7 +170,7 @@ class Genotyping(ArrayQC):
 
         in_file = f'chr6.dose.vcf.gz'
         out_file = f'{self.bfile}_imputedHLA.vcf.gz'
-        cmd = f'ln {in_file} {out_file}; plink2 --vcf {out_file} --make-bed --out {out_file.split(".vcf")[0]}'
+        cmd = f'ln {in_file} {out_file}; bcftools index {out_file}; plink2 --vcf {out_file} --make-bed --out {out_file.split(".vcf")[0]}'
         subprocess.run(cmd, shell=True)
         os.chdir(cwd)
 
