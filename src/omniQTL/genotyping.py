@@ -77,6 +77,44 @@ class Genotyping(ArrayQC):
             raise KeyError(f"Missing required TOPMed configuration parameters: {e}")
         os.chdir(cwd)
 
+    def submit_to_michigan_for_hla_imputation(self, config_file='config.yaml', job_name=None, refpanel=None, chroms=['chr6']):
+        if job_name is None:
+            job_name = f'{self.bfile}'
+        in_dir = f'{self.output_prefix}_checked'
+        if not os.path.exists(in_dir):
+            raise FileNotFoundError(f"Input directory {in_dir} not found")
+        cwd = os.getcwd()
+        os.chdir(in_dir)
+        vcfs = sorted([f for f in os.listdir('.') if f.endswith('.vcf.gz') and f.split('.vcf.gz')[0].split('-')[-1] in chroms])
+
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+        else:
+            config_file = str(BASE / 'config' / config_file)
+            config_template = str(BASE / 'config/config_template.yaml') 
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = yaml.safe_load(f)
+            else:
+                raise FileNotFoundError(f"Config file not found. Please provide one with reference to the template: {config_template}")
+
+        try:
+            url = config['Michigan']['url']
+            token = config['Michigan']['token']
+            if refpanel is None:
+                refpanel = config['Michigan']['refpanel']
+            phasing = config['Michigan']['phasing']
+            cmd = f'curl {url} -H "X-Auth-Token: {token}" -F "refpanel={refpanel}" -F "job-name={job_name}" -F "input-phasing={phasing}" '
+            for vcf in vcfs:
+                cmd += f'-F "files=@{vcf}" '
+            print(cmd)
+            subprocess.run(cmd, shell=True)
+
+        except Exception as e:
+            raise KeyError(f"Missing required Michigan configuration parameters: {e}")
+        os.chdir(cwd)
+
     def get_topmed_results(self, cmd, password, out_dir=None, exclude_typed_only_variants=True, n_threads=4):
         if out_dir is None:
             out_dir = f'{self.bfile}_TOPMed'
