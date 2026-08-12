@@ -77,7 +77,7 @@ class Genotyping(ArrayQC):
             raise KeyError(f"Missing required TOPMed configuration parameters: {e}")
         os.chdir(cwd)
 
-    def submit_to_michigan_for_hla_imputation(self, config_file='config.yaml', job_name=None, refpanel=None, chroms=['chr6']):
+    def submit_to_michigan_for_hla_imputation(self, vcf_file, config_file='config.yaml', job_name=None, refpanel=None):
         if job_name is None:
             job_name = f'{self.bfile}'
         in_dir = f'{self.output_prefix}_checked'
@@ -85,7 +85,6 @@ class Genotyping(ArrayQC):
             raise FileNotFoundError(f"Input directory {in_dir} not found")
         cwd = os.getcwd()
         os.chdir(in_dir)
-        vcfs = sorted([f for f in os.listdir('.') if f.endswith('.vcf.gz') and f.split('.vcf.gz')[0].split('-')[-1] in chroms])
 
         if os.path.exists(config_file):
             with open(config_file, 'r') as f:
@@ -106,7 +105,7 @@ class Genotyping(ArrayQC):
                 refpanel = config['Michigan']['refpanel']
             phasing = config['Michigan']['phasing']
             cmd = f'curl {url} -H "X-Auth-Token: {token}" -F "refpanel={refpanel}" -F "job-name={job_name}" -F "input-phasing={phasing}" '
-            for vcf in vcfs:
+            for vcf in [vcf_file]:
                 cmd += f'-F "files=@{vcf}" '
             print(cmd)
             subprocess.run(cmd, shell=True)
@@ -174,11 +173,14 @@ class Genotyping(ArrayQC):
         subprocess.run(cmd, shell=True)
         os.chdir(cwd)
 
-    def merge_vcfs(self, vcf_files, output_vcf, n_threads=4, params={'R2':'avg'}):
+    def merge_vcfs(self, vcf_files, output_vcf, n_threads=4, params={'R2':'avg'}, force_samples=False):
         params_str = ','.join([f'{key}:{value}' for key, value in params.items()])
         if params_str:
             params_str = f'-i {params_str}'
-        cmd = f'bcftools merge -Oz -o {output_vcf} --threads {n_threads} {params_str} {" ".join(vcf_files)}; tabix -p vcf {output_vcf}'
+        if force_samples:
+            cmd = f'bcftools merge -Oz -o {output_vcf} --force-samples --threads {n_threads} {params_str} {" ".join(vcf_files)}; tabix -p vcf {output_vcf}'
+        else:
+            cmd = f'bcftools merge -Oz -o {output_vcf} --threads {n_threads} {params_str} {" ".join(vcf_files)}; tabix -p vcf {output_vcf}'
         print(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -246,6 +248,13 @@ class Genotyping(ArrayQC):
         print(cmd)
         subprocess.run(cmd, shell=True)
         cmd = f'tabix -p vcf {output_vcf}'
+        subprocess.run(cmd, shell=True)
+
+    def vcf_filter_typed_only_variants(self, vcf_file, output_vcf=None, n_threads=4):
+        if output_vcf is None:
+            output_vcf = vcf_file.replace('.vcf.gz', '_filtered.vcf.gz')
+        cmd = f'''bcftools view -i 'INFO/IMPUTED=1' --threads {n_threads} {vcf_file} -Oz -o {output_vcf}; tabix -p vcf {output_vcf}'''
+        print(cmd)
         subprocess.run(cmd, shell=True)
 
     def vcf_to_bfile(self, vcf_file):
