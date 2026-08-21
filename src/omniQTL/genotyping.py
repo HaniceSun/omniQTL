@@ -125,7 +125,7 @@ class Genotyping(ArrayQC):
 
         fs = [f for f in os.listdir('.') if f.find('chr') == 0 and f.endswith('.zip')]
         for f in fs:
-            cmd = f'unzip -P "{password}" {f}'
+            cmd = f'unzip -P -- "{password}" {f}'
             subprocess.run(cmd, shell=True)
 
         vcfs = []
