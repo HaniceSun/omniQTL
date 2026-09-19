@@ -1,10 +1,55 @@
+"""Summary reporting utilities for the omniQTL pipeline.
+
+This module provides the ``Summary`` class, a collection of methods for
+generating QQ plots, significant-locus/independent-signal bar plots, and
+upset plots of shared genes/donors across caQTL/eQTL/pQTL analyses. It also
+builds donor QC/metadata summary tables (merging REDCap records, genetic
+ancestry/sex calls, and RRID lookups), summarizes peak count and length
+distributions, computes variant functional-consequence and regulatory-region
+enrichment via Fisher's exact test, and compares overlap/correlation of
+significant associations against external datasets such as GTEx, UK Biobank
+plasma pQTL, InsPIRE, and PRS variant lists.
+"""
+from typing import Any
+
 from .utils import *
 
+
 class Summary:
-    def __init__(self):
+    """Collection of QTL summary, QC, and enrichment reporting methods.
+
+    This class bundles a large set of loosely related, mostly
+    file-in/file-out helper methods used to build summary tables and
+    publication-style plots (QQ plots, bar plots, heatmaps, upset plots,
+    and correlation scatter plots) for caQTL/eQTL/pQTL mapping results,
+    donor QC/metadata, and cross-study overlap/enrichment analyses. Most
+    methods read one or more delimited text files, compute a derived
+    table or figure, and write the result back to disk rather than
+    returning a value.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the Summary object (no state is stored)."""
         pass
 
-    def get_table_for_qq_plot(self, in_file='pQTL_permute-1000_w1M_PC25_extraInfo.txt.gz', out_file='pQTL_qq_plot_table.txt', p_col='adj_beta_pval'):
+    def get_table_for_qq_plot(
+        self,
+        in_file: str = 'pQTL_permute-1000_w1M_PC25_extraInfo.txt.gz',
+        out_file: str = 'pQTL_qq_plot_table.txt',
+        p_col: str = 'adj_beta_pval',
+    ) -> None:
+        """Build a table of expected vs. observed -log10(p) values for a QQ plot.
+
+        For each phenotype (``phe_id``) group in ``in_file``, the minimum
+        p-value in ``p_col`` is taken, sorted ascending, and paired with the
+        corresponding expected p-value under the uniform null to produce
+        ``expected``/``observed`` -log10 columns.
+
+        Args:
+            in_file: Path to the input tab-delimited association file.
+            out_file: Path to write the resulting QQ-plot table.
+            p_col: Name of the p-value column to summarize per phenotype.
+        """
         L = []
         df = pd.read_table(in_file, header=0, sep='\t')
         for gi, g in df.groupby('phe_id'):
@@ -14,11 +59,29 @@ class Summary:
         df = pd.DataFrame(L, columns=['phe_id', 'min_p'])
         df.sort_values('min_p', inplace=True)
         n = df.shape[0]
-        df['expected'] = -np.log10(np.arange(1, n+1) / (n+1))
+        df['expected'] = -np.log10(np.arange(1, n + 1) / (n + 1))
         df['observed'] = -np.log10(df['min_p'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def qq_plot(self, in_file, title='QQ plot', scatter_size=4, color='C1', figsize=(4, 4)):
+    def qq_plot(
+        self,
+        in_file: str,
+        title: str = 'QQ plot',
+        scatter_size: float = 4,
+        color: str = 'C1',
+        figsize: tuple[float, float] = (4, 4),
+    ) -> None:
+        """Draw a QQ plot from a table produced by ``get_table_for_qq_plot``.
+
+        Args:
+            in_file: Path to the tab-delimited table with ``expected`` and
+                ``observed`` columns; the output PDF path is derived by
+                replacing ``.txt`` with ``.pdf``.
+            title: Plot title.
+            scatter_size: Marker size for the scatter points.
+            color: Color for the scatter points.
+            figsize: Figure size in inches, as ``(width, height)``.
+        """
         out_file = in_file.replace('.txt', '.pdf')
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
@@ -31,16 +94,53 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def bar_plot_significant_loci(self, in_file, axes=[0.3, 0.4, 0.6, 0.5], cmap='Dark2', show_numbers=True, figsize=(4, 4), ylabel='Number of significant signals'):
+    def bar_plot_significant_loci(
+        self,
+        in_file: str,
+        axes: list[float] = [0.3, 0.4, 0.6, 0.5],
+        cmap: str = 'Dark2',
+        show_numbers: bool = True,
+        figsize: tuple[float, float] = (4, 4),
+        ylabel: str = 'Number of significant signals',
+    ) -> None:
+        """Plot a bar chart of the number of significant loci per study.
+
+        Draws bars for each study/sample-size combination (grouped visually
+        into caQTL, eQTL, and pQTL brackets via manual bracket lines), with
+        optional value labels on top of each bar.
+
+        Args:
+            in_file: Path to a tab-delimited file with ``Study``,
+                ``SampleSize``, and ``Number of significant loci`` columns;
+                the output PDF path replaces the first ``.txt`` segment
+                with ``.pdf``.
+            axes: Axes rectangle ``[left, bottom, width, height]`` in figure
+                coordinates used for ``fig.add_axes``.
+            cmap: Seaborn/matplotlib color palette name.
+            show_numbers: Whether to annotate each bar with its value.
+            figsize: Figure size in inches, as ``(width, height)``.
+            ylabel: Y-axis label; if falsy, no label is set.
+        """
         out_file = in_file.split('.txt')[0] + '.pdf'
         cmap = sns.color_palette(cmap)
 
         df = pd.read_table(in_file, header=0, sep='\t')
-        df['StudySampleSize'] = [f"{df['Study'].iloc[n]}\n(N={df['SampleSize'].iloc[n]})" for n in range(df.shape[0])]
-    
+        df['StudySampleSize'] = [
+            f"{df['Study'].iloc[n]}\n(N={df['SampleSize'].iloc[n]})" for n in range(df.shape[0])
+        ]
+
         fig = plt.figure(figsize=figsize)
         ax = fig.add_axes(axes)
-        sns.barplot(y='Number of significant loci', x='StudySampleSize', hue='StudySampleSize', data=df, palette=[cmap[0], cmap[-1], cmap[1], cmap[-1], cmap[2]], legend=False, linewidth=1, edgecolor='black')
+        sns.barplot(
+            y='Number of significant loci',
+            x='StudySampleSize',
+            hue='StudySampleSize',
+            data=df,
+            palette=[cmap[0], cmap[-1], cmap[1], cmap[-1], cmap[2]],
+            legend=False,
+            linewidth=1,
+            edgecolor='black',
+        )
         ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
         ax.set_xlabel('')
         if ylabel:
@@ -57,14 +157,32 @@ class Summary:
         ax.plot([0, 0, 1, 1], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
         ax.plot([2, 2, 3, 3], [y1, y2, y2, y1], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
         ax.plot([4, 4], [y1, y2], transform=ax.get_xaxis_transform(), lw=1, color='k', clip_on=False)
-        ax.text(0.5, y2-0.03, 'caQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
-        ax.text(2.5, y2-0.03, 'eQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
-        ax.text(4, y2-0.03, 'pQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+        ax.text(0.5, y2 - 0.03, 'caQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+        ax.text(2.5, y2 - 0.03, 'eQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
+        ax.text(4, y2 - 0.03, 'pQTL', ha='center', va='top', transform=ax.get_xaxis_transform())
 
         #plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_table_for_upset_plot(self, in_files=['caQTL_permute-1000_w1k_qvalue.significant.txt'], out_file='QTL_upset_plot_table.txt'):
+    def get_table_for_upset_plot(
+        self,
+        in_files: list[str] = ['caQTL_permute-1000_w1k_qvalue.significant.txt'],
+        out_file: str = 'QTL_upset_plot_table.txt',
+    ) -> None:
+        """Summarize the unique gene sets targeted by each QTL type for an upset plot.
+
+        For each input file, the QTL type is inferred from the filename
+        prefix. For ``caQTL`` files, comma-separated gene lists embedded in
+        the first column are split and pooled; for other QTL types, the
+        last underscore-delimited token of the first column is treated as
+        the gene id.
+
+        Args:
+            in_files: List of paths to significant-association files, one
+                per QTL type, whose filenames start with the QTL type
+                (e.g. ``caQTL_...``).
+            out_file: Path to write the resulting summary table.
+        """
         L = []
         for f in in_files:
             qtl = f.split('_')[0]
@@ -77,12 +195,28 @@ class Summary:
             else:
                 for item in df.iloc[:, 0]:
                     genes.append(item.split('_')[-1])
-            genes_uniq= sorted(set(genes))
+            genes_uniq = sorted(set(genes))
             L.append([qtl, len(genes_uniq), ','.join(genes_uniq)])
         df = pd.DataFrame(L, columns=['qtl', 'numer_of_genes', 'genes'])
         df.to_csv(out_file, header=True, index=False, sep='\t')
 
-    def plot_upset_qtl(self, in_file='QTL_upset_plot_table.txt', cmap='deep'):
+    def plot_upset_qtl(
+        self,
+        in_file: str = 'QTL_upset_plot_table.txt',
+        cmap: str = 'deep',
+    ) -> None:
+        """Draw an upset plot of shared genes across QTL types.
+
+        Reads the table produced by ``get_table_for_upset_plot``, builds a
+        membership dict of gene sets keyed by QTL type, and colors specific
+        subsets (single QTL types, pairwise intersections, and the
+        three-way intersection) with distinct palette colors.
+
+        Args:
+            in_file: Path to the tab-delimited upset-plot table; the output
+                PDF path appends ``_upset.pdf`` after stripping ``.txt``.
+            cmap: Seaborn color palette name used to style subsets.
+        """
         from upsetplot import from_contents
         from upsetplot import UpSet
         cmap = sns.color_palette(cmap)
@@ -105,7 +239,21 @@ class Summary:
         ax.plot()
         plt.savefig(out_file)
 
-    def plot_upset_donors(self, in_files=[], out_file='donors_upset.pdf', color='C0'):
+    def plot_upset_donors(
+        self,
+        in_files: list[str] = [],
+        out_file: str = 'donors_upset.pdf',
+        color: str = 'C0',
+    ) -> None:
+        """Draw an upset plot of shared donors across sample lists.
+
+        Args:
+            in_files: List of paths to single-column, headerless donor-id
+                files; the group name for each is derived from the part of
+                the filename before the first underscore.
+            out_file: Path to write the resulting PDF.
+            color: Facecolor used for all upset-plot subsets.
+        """
         from upsetplot import from_contents
         from upsetplot import UpSet
 
@@ -120,13 +268,51 @@ class Summary:
         ax.plot()
         plt.savefig(out_file)
 
-    def get_summary_table_donor_qc(self, in_files=['caQTL_samples.txt', 'eQTL_samples.txt', 'pQTL_samples.txt', 'GSIS_samples.txt'], in_files2=['ATACseq_number_mapped_reads.txt', 'RNAseq_number_mapped_reads.txt', 'ATACseq_tss_score.txt', 'RNAseq_data_source.txt'], in_files3=['ATACseq_number_peaks_by_qvalue.txt'], out_file='donor_qc_summary.txt', cols=['donor_id', 'caQTL', 'eQTL', 'pQTL', 'GSIS', 'ATACseq_number_mapped_reads', 'ATACseq_tss_score', 'ATACseq_number_peaks_by_qvalue', 'RNAseq_number_mapped_reads', 'RNAseq_data_source']):
+    def get_summary_table_donor_qc(
+        self,
+        in_files: list[str] = [
+            'caQTL_samples.txt', 'eQTL_samples.txt', 'pQTL_samples.txt', 'GSIS_samples.txt',
+        ],
+        in_files2: list[str] = [
+            'ATACseq_number_mapped_reads.txt', 'RNAseq_number_mapped_reads.txt',
+            'ATACseq_tss_score.txt', 'RNAseq_data_source.txt',
+        ],
+        in_files3: list[str] = ['ATACseq_number_peaks_by_qvalue.txt'],
+        out_file: str = 'donor_qc_summary.txt',
+        cols: list[str] = [
+            'donor_id', 'caQTL', 'eQTL', 'pQTL', 'GSIS', 'ATACseq_number_mapped_reads',
+            'ATACseq_tss_score', 'ATACseq_number_peaks_by_qvalue', 'RNAseq_number_mapped_reads',
+            'RNAseq_data_source',
+        ],
+    ) -> None:
+        """Build a combined donor QC/inclusion summary table across QTL modalities.
+
+        Merges donor membership lists (``in_files``, e.g. per-QTL-type
+        sample lists marked ``Yes``), per-donor QC metrics (``in_files2``),
+        and per-donor peak counts (``in_files3``) into one wide table keyed
+        by donor id, sorted by inclusion across the four QTL/GSIS modalities
+        then by donor id. Also writes a filtered subset of new,
+        non-duplicated samples that are included in at least one modality.
+
+        Args:
+            in_files: Paths to headerless per-modality donor-id list files
+                (e.g. ``caQTL_samples.txt``); presence marks ``Yes``.
+            in_files2: Paths to headered per-donor QC metric files whose
+                first two columns are donor id and value.
+            in_files3: Paths to headered per-donor peak-count files whose
+                second and third columns are donor id and value.
+            out_file: Path to write the combined summary table; a second
+                file with suffix ``_new_samples.txt`` is also written.
+            cols: Output column names, with ``cols[0]`` as the donor-id
+                column and the remainder matching the modality/metric keys
+                derived from ``in_files``/``in_files2``/``in_files3``.
+        """
         D = {}
         S = []
         for f in in_files:
             k = f.split('_')[0]
             df = pd.read_table(f, header=None, sep='\t')
-            D[k] = {s:'Yes' for s in df.iloc[:, 0]}
+            D[k] = {s: 'Yes' for s in df.iloc[:, 0]}
             S += D[k]
         for f in in_files2:
             k = f.split('.txt')[0]
@@ -157,20 +343,60 @@ class Summary:
         df.to_csv(out_file, index=False, sep='\t')
 
         wh1 = (df['eQTL'] == 'Yes') & df['RNAseq_data_source'].str.contains('new')
-        wh2 = df['caQTL'] =='Yes' 
+        wh2 = df['caQTL'] == 'Yes'
         wh3 = df['pQTL'] == 'Yes'
         wh4 = df['GSIS'] == 'Yes'
-        wh5 =  df['donor_id'].str.contains('ISLET')
+        wh5 = df['donor_id'].str.contains('ISLET')
         print(f'eQTL: {sum(wh1)}')
         print(f'caQTL: {sum(wh2)}')
         print(f'pQTL: {sum(wh3)}')
         print(f'GSIS: {sum(wh4)}')
         print(f'duplicated: {sum(wh5)}')
-        df_new = df[(wh1|wh2|wh3|wh4)&(~wh5)].iloc[:, 0:5]
+        df_new = df[(wh1 | wh2 | wh3 | wh4) & (~wh5)].iloc[:, 0:5]
         df_new.to_csv(out_file.replace('.txt', '_new_samples.txt'), index=False, sep='\t')
         print(f'final number of unique samples: {df_new.shape[0]}')
 
-    def get_donor_info(self, in_file, gap_file='GAP_Oxford-Stanford_conditional_batch18_extraInfo.txt', human_islets_file='human_islets.txt', redcap_file='REDCap.csv', extra_file1='', extra_file2=''):
+    def get_donor_info(
+        self,
+        in_file: str,
+        gap_file: str = 'GAP_Oxford-Stanford_conditional_batch18_extraInfo.txt',
+        human_islets_file: str = 'human_islets.txt',
+        redcap_file: str = 'REDCap.csv',
+        extra_file1: str = '',
+        extra_file2: str = '',
+    ) -> None:
+        """Assemble a per-donor metadata table from multiple source files.
+
+        Starting from ``in_file`` (per-donor QTL/genotyping inclusion
+        flags), this adds: a ``gwas`` column copied from ``genotyped``;
+        national-id and RRID cross-references parsed from ``redcap_file``;
+        sex/age/BMI parsed from an optional ``extra_file1`` REDCap-like
+        extract, keyed by national id; genetic sex/ancestry/source parsed
+        from ``gap_file`` and merged in by donor id (with a warning printed
+        if a genetic-sex value contains multiple space-separated tokens);
+        a recomputed ``genotyped`` flag that is true if any of
+        gwas/rna/atac/protein/genetic-sex is present; and RRID/sex/age/
+        BMI/HbA1c pulled from ``human_islets_file`` by donor id, backfilled
+        from the REDCap/extra-file cross-references (matched via national
+        id) when missing, with a special-cased age of ``53`` hardcoded for
+        donor ``H522`` when otherwise unknown.
+
+        Args:
+            in_file: Path to the base per-donor inclusion-flag table; the
+                output path replaces the first ``.txt`` segment with
+                ``_donor_info.txt``.
+            gap_file: Path to the genetic ancestry/sex/source table (GAP
+                pipeline output).
+            human_islets_file: Path to the Human Islets REDCap-style export
+                with RRID, sex, age, height, weight, BMI, and HbA1c.
+            redcap_file: Path to a REDCap CSV export with national id and
+                RRID per donor; ignored if empty or missing.
+            extra_file1: Path to an optional supplementary tab-delimited
+                file with ``National ID``, ``Gender``, ``Age``, and ``BMI``
+                columns; ignored if empty or missing.
+            extra_file2: Unused placeholder for an additional supplementary
+                file path.
+        """
         out_file = in_file.split('.txt')[0] + '_donor_info.txt'
         df = pd.read_table(in_file, header=0, sep='\t')
 
@@ -308,7 +534,21 @@ class Summary:
                 df.at[n, 'age'] = '53'
         df.to_csv(out_file, index=False, sep='\t')
 
-    def summarize_donor_info(self, in_file='donor_info.txt'):
+    def summarize_donor_info(self, in_file: str = 'donor_info.txt') -> None:
+        """Summarize donor counts per QC/inclusion criterion and flag sex mismatches.
+
+        Counts total donors and, for each column, the number of donors
+        with a positive flag (``== 1`` for the first several columns) or a
+        non-missing value (``!= '.'`` otherwise). Also reports donors
+        included in any QTL modality, any GWAS/QTL modality, and those
+        with a mismatch between reported (``sex``) and genetically
+        inferred (``genetic_sex``) sex (printed, not written to file).
+
+        Args:
+            in_file: Path to the donor-info table produced by
+                ``get_donor_info``; the output path replaces ``.txt`` with
+                ``_summary.txt``.
+        """
         df = pd.read_table(in_file, header=0, sep='\t')
         out_file = in_file.replace('.txt', '_summary.txt')
         L = []
@@ -324,9 +564,9 @@ class Summary:
         wh2 = df['atac'] == 1
         wh3 = df['protein'] == 1
         wh4 = df['gwas'] == 1
-        L.append(['qtl', sum(wh1|wh2|wh3)])
-        L.append(['gwas/qtl', sum(wh1|wh2|wh3|wh4)])
-        L.append(['deposited to EGA', sum(wh1|wh2|wh3|wh4)])
+        L.append(['qtl', sum(wh1 | wh2 | wh3)])
+        L.append(['gwas/qtl', sum(wh1 | wh2 | wh3 | wh4)])
+        L.append(['deposited to EGA', sum(wh1 | wh2 | wh3 | wh4)])
 
         wh1 = df['genetic_sex'] == '.'
         wh2 = df['sex'] == '.'
@@ -338,7 +578,19 @@ class Summary:
         df_summary = pd.DataFrame(L, columns=['info', 'number of donors', 'comments'])
         df_summary.to_csv(out_file, index=False, sep='\t')
 
-    def get_number_raw_peaks(self, in_dirs, out_file='caQTL_number_raw_peaks.txt'):
+    def get_number_raw_peaks(
+        self,
+        in_dirs: list[str],
+        out_file: str = 'caQTL_number_raw_peaks.txt',
+    ) -> None:
+        """Count raw narrowPeak calls per sample across one or more peak-call directories.
+
+        Args:
+            in_dirs: Directories to scan for ``*.narrowPeak.gz`` files; the
+                peak type for each directory is derived from the text after
+                the last underscore in the directory name.
+            out_file: Path to write the per-sample peak-count table.
+        """
         L = []
         for in_dir in in_dirs:
             for f in os.listdir(in_dir):
@@ -353,13 +605,32 @@ class Summary:
         df = pd.DataFrame(L, columns=['peak_type', 'sample', 'number_of_peaks'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_raw_peaks(self, in_file='caQTL_number_raw_peaks.txt', cmap='Blues', ylabel='Number of raw peaks (million)', add_stripplot=False, figsize=(4, 4)):
+    def plot_number_raw_peaks(
+        self,
+        in_file: str = 'caQTL_number_raw_peaks.txt',
+        cmap: str = 'Blues',
+        ylabel: str = 'Number of raw peaks (million)',
+        add_stripplot: bool = False,
+        figsize: tuple[float, float] = (4, 4),
+    ) -> None:
+        """Draw a boxplot of raw peak counts per peak type.
+
+        Args:
+            in_file: Path to the table produced by ``get_number_raw_peaks``;
+                the output PDF path replaces ``.txt`` with ``_boxplot.pdf``.
+            cmap: Color palette for the boxes.
+            ylabel: Y-axis label; if it contains ``'million'``, peak counts
+                are divided by 1e6 before plotting.
+            add_stripplot: Whether to overlay a strip plot of individual
+                sample values.
+            figsize: Figure size in inches, as ``(width, height)``.
+        """
         out_file = in_file.split('.txt')[0] + '_boxplot.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         if ylabel.find('million') != -1:
-            df['number_of_peaks'] = df['number_of_peaks']/1e6
+            df['number_of_peaks'] = df['number_of_peaks'] / 1e6
         sns.boxplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False)
         if add_stripplot:
             sns.stripplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, color='C0', size=4)
@@ -368,7 +639,23 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_number_merged_peaks(self, in_files, out_file='caQTL_number_merged_peaks.txt', params={'consensus':'consensus peaks', 'summitExtended':'summit extended peaks'}):
+    def get_number_merged_peaks(
+        self,
+        in_files: list[str],
+        out_file: str = 'caQTL_number_merged_peaks.txt',
+        params: dict[str, str] = {'consensus': 'consensus peaks', 'summitExtended': 'summit extended peaks'},
+    ) -> None:
+        """Count lines (peaks) in each merged-peak BED-like file.
+
+        Args:
+            in_files: Paths to merged peak files, named like
+                ``<x>_<peak_type>_<peak_method>_...``; peak type and method
+                are parsed from the second and third underscore-delimited
+                filename tokens.
+            out_file: Path to write the resulting peak-count table.
+            params: Mapping used to rename raw peak-method tokens (e.g.
+                ``consensus`` -> ``consensus peaks``) for display.
+        """
         L = []
         for f in in_files:
             peak_type = f.split('_')[1]
@@ -382,29 +669,72 @@ class Summary:
         df = pd.DataFrame(L, columns=['peak_type', 'peak_method', 'number_of_peaks'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_number_merged_peaks(self, in_file='caQTL_number_merged_peaks.txt', cmap='Blues', ylabel='Number of merged peaks (million)', figsize=(4, 4)):
+    def plot_number_merged_peaks(
+        self,
+        in_file: str = 'caQTL_number_merged_peaks.txt',
+        cmap: str = 'Blues',
+        ylabel: str = 'Number of merged peaks (million)',
+        figsize: tuple[float, float] = (4, 4),
+    ) -> None:
+        """Draw a bar chart of merged peak counts per peak type (and method, if multiple).
+
+        Args:
+            in_file: Path to the table produced by ``get_number_merged_peaks``;
+                the output PDF path replaces ``.txt`` with ``_barplot.pdf``.
+            cmap: Color palette for the bars.
+            ylabel: Y-axis label; if it contains ``'million'``, peak counts
+                are divided by 1e6 before plotting.
+            figsize: Figure size in inches, as ``(width, height)``.
+        """
         out_file = in_file.split('.txt')[0] + '_barplot.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         if ylabel.find('million') != -1:
-            df['number_of_peaks'] = df['number_of_peaks']/1e6
+            df['number_of_peaks'] = df['number_of_peaks'] / 1e6
         if df['peak_method'].nunique() > 1:
             sns.barplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_method', palette=cmap)
             ax.legend(title=None, loc='upper left', prop={'size': 7})
         else:
-            sns.barplot(x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False)
+            sns.barplot(
+                x='peak_type', y='number_of_peaks', data=df, ax=ax, hue='peak_type', palette=cmap, legend=False,
+            )
         ax.set_xlabel('')
         ax.set_ylabel(ylabel)
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def plot_correlation_number_peaks_and_reads(self, in_file_reads='caQTL_number_mapped_reads.txt', in_file_peaks='caQTL_number_raw_peaks_qvalue.txt', out_file='correlation_number_peaks_and_reads.pdf', cmap='Blues', xlabel='Number of mapped reads (million)', ylabel='Number of raw peaks (million)', figsize=(4, 4), base=1e6):
+    def plot_correlation_number_peaks_and_reads(
+        self,
+        in_file_reads: str = 'caQTL_number_mapped_reads.txt',
+        in_file_peaks: str = 'caQTL_number_raw_peaks_qvalue.txt',
+        out_file: str = 'correlation_number_peaks_and_reads.pdf',
+        cmap: str = 'Blues',
+        xlabel: str = 'Number of mapped reads (million)',
+        ylabel: str = 'Number of raw peaks (million)',
+        figsize: tuple[float, float] = (4, 4),
+        base: float = 1e6,
+    ) -> None:
+        """Plot a regression of peak counts against mapped-read counts per sample.
+
+        Args:
+            in_file_reads: Path to a per-sample mapped-read-count table.
+            in_file_peaks: Path to a per-sample peak-count table; merged
+                with ``in_file_reads`` on ``sample``.
+            out_file: Path to write the resulting PDF.
+            cmap: Unused color-palette parameter kept for signature
+                consistency with sibling plotting methods.
+            xlabel: X-axis label.
+            ylabel: Y-axis label.
+            figsize: Figure size in inches, as ``(width, height)``.
+            base: Divisor applied to both read and peak counts before
+                plotting (e.g. to express counts in millions).
+        """
         df_reads = pd.read_table(in_file_reads, header=0, sep='\t')
         df_peaks = pd.read_table(in_file_peaks, header=0, sep='\t')
         df = pd.merge(df_reads, df_peaks, on='sample')
-        df['number_of_peaks'] = df['number_of_peaks']/base
-        df['number_of_reads'] = df['number_of_reads']/base
+        df['number_of_peaks'] = df['number_of_peaks'] / base
+        df['number_of_reads'] = df['number_of_reads'] / base
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         sns.regplot(x='number_of_reads', y='number_of_peaks', data=df, ax=ax, color='C0')
@@ -413,7 +743,23 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_length_distribution_merged_peaks(self, in_files=[], out_file='caQTL_length_distribution_merged_peaks.txt', params={'consensus':'consensus peaks', 'summitExtended':'summit extended peaks'}):
+    def get_length_distribution_merged_peaks(
+        self,
+        in_files: list[str] = [],
+        out_file: str = 'caQTL_length_distribution_merged_peaks.txt',
+        params: dict[str, str] = {'consensus': 'consensus peaks', 'summitExtended': 'summit extended peaks'},
+    ) -> None:
+        """Tabulate the length of every interval in a set of merged-peak BED files.
+
+        Args:
+            in_files: Paths to BED-like peak files; the peak threshold is
+                parsed from the second underscore-delimited filename token
+                and the peak type from the second-to-last token (with
+                ``.bed`` stripped), then renamed via ``params``.
+            out_file: Path to write the per-interval length table.
+            params: Mapping used to rename raw peak-type tokens (e.g.
+                ``consensus`` -> ``consensus peaks``) for display.
+        """
         L = []
         for f in in_files:
             peak_threshold = f.split('_')[1]
@@ -427,7 +773,31 @@ class Summary:
         df = pd.DataFrame(L, columns=['peak_type', 'peak_threshold', 'length'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def plot_length_distribution_merged_peaks(self, in_file='caQTL_length_distribution_merged_peaks.txt', cmap='Set2', xlabel='Length of merged peaks (bp)', figsize=(4, 4), peak_types=['consensus peaks', 'summit extended peaks'], show_summit=True):
+    def plot_length_distribution_merged_peaks(
+        self,
+        in_file: str = 'caQTL_length_distribution_merged_peaks.txt',
+        cmap: str = 'Set2',
+        xlabel: str = 'Length of merged peaks (bp)',
+        figsize: tuple[float, float] = (4, 4),
+        peak_types: list[str] = ['consensus peaks', 'summit extended peaks'],
+        show_summit: bool = True,
+    ) -> None:
+        """Plot a KDE of merged-peak lengths, optionally marking the summit-extension length.
+
+        Args:
+            in_file: Path to the table produced by
+                ``get_length_distribution_merged_peaks``; the output PDF
+                path replaces ``.txt`` with ``_hist.pdf`` (and
+                ``_with_summit.pdf`` if ``show_summit`` is set).
+            cmap: Seaborn color palette name.
+            xlabel: X-axis label.
+            figsize: Figure size in inches, as ``(width, height)``.
+            peak_types: Two-element list naming the "main" peak type (index
+                0, plotted as a KDE per threshold) and the "summit
+                extended" peak type (index 1, used for the reference line).
+            show_summit: Whether to draw a vertical dashed line at the
+                fixed length of the first ``peak_types[1]`` interval.
+        """
         out_file = in_file.split('.txt')[0] + '_hist.pdf'
         cmap = sns.color_palette(cmap)
         df = pd.read_table(in_file, header=0, sep='\t')
@@ -446,7 +816,20 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_number_independent_signals(self, in_files=[], out_file='QTL_number_of_independent_signals.txt'):
+    def get_number_independent_signals(
+        self,
+        in_files: list[str] = [],
+        out_file: str = 'QTL_number_of_independent_signals.txt',
+    ) -> None:
+        """Tabulate the distribution of independent-signal counts per QTL type.
+
+        Args:
+            in_files: Paths to per-QTL-type conditional-analysis result
+                files with an ``n_independent_signals`` column; the QTL
+                type is taken from the text before the first underscore in
+                each filename.
+            out_file: Path to write the concatenated value-count table.
+        """
         L = []
         for f in in_files:
             df = pd.read_table(f, header=0, sep='\t')
@@ -455,15 +838,34 @@ class Summary:
             L.append(counts)
         df = pd.concat(L, axis=0)
         df.to_csv(out_file, index=False, sep='\t')
-    
-    def plot_number_independent_signals(self, in_file='QTL_number_of_independent_signals.txt', show_numbers=True, ylim=[0, 10000], title='QTL conditional analysis', cmap='Dark2'):
+
+    def plot_number_independent_signals(
+        self,
+        in_file: str = 'QTL_number_of_independent_signals.txt',
+        show_numbers: bool = True,
+        ylim: list[float] = [0, 10000],
+        title: str = 'QTL conditional analysis',
+        cmap: str = 'Dark2',
+    ) -> None:
+        """Plot a bar chart of independent-signal counts, colored and grouped by QTL type.
+
+        Args:
+            in_file: Path to the table produced by
+                ``get_number_independent_signals``; the output PDF path
+                replaces ``.txt`` with ``_barplot.pdf``.
+            show_numbers: Whether to annotate each bar with its count.
+            ylim: Y-axis limits as ``[low, high]``.
+            title: Plot title.
+            cmap: Seaborn color palette name used to assign one color per
+                QTL type.
+        """
         out_file = in_file.split('.txt')[0] + '_barplot.pdf'
         df = pd.read_table(in_file, header=0, sep='\t').reset_index()
-    
+
         cmap = sns.color_palette(cmap)
         color_map = {qtl_type: cmap[i] for i, qtl_type in enumerate(df['qtl_type'].unique())}
         palette = list(df['qtl_type'].map(color_map))
-    
+
         fig = plt.figure()
         ax = fig.add_subplot()
         sns.barplot(x='index', y='count', data=df, ax=ax, palette=palette, hue='index', legend=False)
@@ -483,7 +885,15 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz'):
+    def get_sig_variants(self, in_file: str = 'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz') -> None:
+        """Extract the unique set of significant variants (id, chrom, position) from a result file.
+
+        Args:
+            in_file: Path to a gzip-compressed tab-delimited association
+                file with ``var_id``, ``var_chr``, and ``var_from``
+                columns; the output path replaces ``.txt.gz`` with
+                ``_variants.txt``.
+        """
         out_file = in_file.replace('.txt.gz', '_variants.txt')
         S = set()
         with gzip.open(in_file, 'rt') as f:
@@ -499,7 +909,26 @@ class Summary:
             for k in sorted(S):
                 f.write('\t'.join(k) + '\n')
 
-    def get_non_sig_variants(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz', params={'p_col': 'nom_pval', 'p_threshold': 0.05}):
+    def get_non_sig_variants(
+        self,
+        in_file: str = 'eQTL_nominal-1.0_w1M_PC25_extraInfo.txt.gz',
+        params: dict[str, Any] = {'p_col': 'nom_pval', 'p_threshold': 0.05},
+    ) -> None:
+        """Extract variants whose minimum p-value across all tests exceeds a threshold.
+
+        For each variant (identified by id, chromosome, and position), the
+        minimum p-value in column ``params['p_col']`` across all its
+        occurrences in ``in_file`` is compared to
+        ``params['p_threshold']``; variants where the minimum exceeds the
+        threshold are considered non-significant and written out.
+
+        Args:
+            in_file: Path to a gzip-compressed tab-delimited association
+                file; the output path replaces ``.txt.gz`` with
+                ``_non_sig_variants.txt``.
+            params: Dict with keys ``p_col`` (p-value column name) and
+                ``p_threshold`` (float cutoff).
+        """
         out_file = in_file.replace('.txt.gz', '_non_sig_variants.txt')
         D = {}
         p_col = params.get('p_col', 'nom_pval')
@@ -524,7 +953,29 @@ class Summary:
                 if min(D[k]) > p_threshold:
                     f.write(k + '\n')
 
-    def get_variant_annotation(self, in_file='pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_variants.txt', vep_file='pQTL_genotyping_sampleRenamed_rsID_variantFiltered_vep.vcf.gz', canonical_transcript_only=True):
+    def get_variant_annotation(
+        self,
+        in_file: str = 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_variants.txt',
+        vep_file: str = 'pQTL_genotyping_sampleRenamed_rsID_variantFiltered_vep.vcf.gz',
+        canonical_transcript_only: bool = True,
+    ) -> None:
+        """Annotate variants with VEP consequence terms parsed from a VEP-annotated VCF.
+
+        Parses the ``CSQ`` INFO field format from the VCF header, then for
+        each variant collects consequence terms from the ``CSQ`` entries
+        (optionally restricted to the canonical transcript), and writes
+        each input variant's row with an appended sorted, comma-joined
+        annotation column (defaulting to ``intergenic_variant`` when no
+        annotation is found).
+
+        Args:
+            in_file: Path to a tab-delimited file of variants (first
+                column is the variant id matching VCF ``ID``); the output
+                path replaces ``.txt`` with ``_annotated.txt``.
+            vep_file: Path to a gzip-compressed VEP-annotated VCF.
+            canonical_transcript_only: If True, only consequence terms from
+                transcripts flagged ``CANONICAL=YES`` are kept.
+        """
         D = {}
         with gzip.open(vep_file, 'rt') as f:
             for line in f:
@@ -560,7 +1011,28 @@ class Summary:
                     annotation = ','.join(sorted(set(D[var_id])))
                 fout.write('\t'.join(items + [annotation]) + '\n')
 
-    def count_variant_consequence(self, in_files=['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_annotated.txt'], out_file='QTL_variants_consequence_count.txt', extra_class=['splice', 'UTR', 'inframe', 'frameshift', 'stop', 'start']):
+    def count_variant_consequence(
+        self,
+        in_files: list[str] = ['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_annotated.txt'],
+        out_file: str = 'QTL_variants_consequence_count.txt',
+        extra_class: list[str] = ['splice', 'UTR', 'inframe', 'frameshift', 'stop', 'start'],
+    ) -> None:
+        """Count variants per VEP consequence annotation, plus coarse extra-class rollups.
+
+        For each annotated variant file, tallies how many variants carry
+        each individual consequence term (from the last, comma-delimited
+        annotation column written by ``get_variant_annotation``), and
+        additionally accumulates counts into broader categories listed in
+        ``extra_class`` whenever a term contains that category substring
+        (e.g. any ``*splice*`` term also increments the ``splice`` count).
+
+        Args:
+            in_files: Paths to annotated variant files (tab-delimited,
+                last column is the annotation string).
+            out_file: Path to write the combined in/out count table.
+            extra_class: Substrings defining coarse consequence categories
+                to additionally tally.
+        """
         L = []
         for f in in_files:
             print(f'processing {f}...')
@@ -585,7 +1057,19 @@ class Summary:
         df = pd.DataFrame(L, columns=['file', 'annotation', 'in_count', 'out_count'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def split_Ensembl_regulatory_annotation(self, in_file='Ensembl_BioMart_RegulatoryAnnotation.txt.gz'):
+    def split_Ensembl_regulatory_annotation(
+        self,
+        in_file: str = 'Ensembl_BioMart_RegulatoryAnnotation.txt.gz',
+    ) -> None:
+        """Split a combined Ensembl BioMart regulatory annotation file into one BED per feature type.
+
+        Args:
+            in_file: Path to the gzip-compressed BioMart export with
+                ``Feature type``, ``Chromosome/scaffold name``,
+                ``Start (bp)``, and ``End (bp)`` columns; one output BED
+                file per distinct feature type is written, named by
+                replacing ``.txt.gz`` with ``_<feature_type>.bed``.
+        """
         # download the regulatory annotation from Ensembl BioMart manually, then split the file into different feature types for downstream analysis
         df = pd.read_table(in_file, header=0, sep='\t', low_memory=False)
         for gi, g in df.groupby('Feature type'):
@@ -595,7 +1079,24 @@ class Summary:
             g_sub['ch'] = [f'chr{x}' for x in g_sub['ch']]
             g_sub.to_csv(out_file, header=False, index=False, sep='\t')
 
-    def count_variant_regulatory(self, in_files=['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_variants.txt'], bed_files=['Ensembl_BioMart_RegulatoryAnnotation_Enhancer.bed'], out_file='QTL_variants_regulatory_count.txt'):
+    def count_variant_regulatory(
+        self,
+        in_files: list[str] = ['pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_variants.txt'],
+        bed_files: list[str] = ['Ensembl_BioMart_RegulatoryAnnotation_Enhancer.bed'],
+        out_file: str = 'QTL_variants_regulatory_count.txt',
+    ) -> None:
+        """Count variants overlapping each regulatory-annotation BED file using PyRanges.
+
+        Args:
+            in_files: Paths to headerless tab-delimited files of
+                ``rsID, Chromosome, Start`` variant records (point
+                positions).
+            bed_files: Paths to headerless BED files of regulatory regions;
+                start coordinates are shifted by 1 to convert from BED's
+                0-based to 1-based coordinates before intersecting.
+            out_file: Path to write the combined in/out overlap count
+                table across all ``in_files`` x ``bed_files`` pairs.
+        """
         L = []
         for f1 in in_files:
             for f2 in bed_files:
@@ -618,7 +1119,30 @@ class Summary:
         df = pd.DataFrame(L, columns=['file', 'annotation', 'in_count', 'out_count'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def test_enrichment_using_fisher_exact(self, in_file='QTL_variants_regulatory_count.txt', idx_qtl=0):
+    def test_enrichment_using_fisher_exact(
+        self,
+        in_file: str = 'QTL_variants_regulatory_count.txt',
+        idx_qtl: int = 0,
+    ) -> None:
+        """Test enrichment of significant vs. non-significant variants in each annotation via Fisher's exact test.
+
+        For each QTL type and annotation combination, pairs the
+        significant-variant in/out counts with the corresponding
+        non-significant-variant counts (identified by filename containing
+        ``non_sig``, sorted to put significant rows first) and runs
+        ``scipy.stats.fisher_exact`` on the resulting 2x2 contingency
+        table to get an odds ratio and p-value. Groups without exactly one
+        significant and one non-significant row are skipped with a
+        warning.
+
+        Args:
+            in_file: Path to the table produced by
+                ``count_variant_regulatory`` (or an equivalent count
+                table); the output path replaces ``.txt`` with
+                ``_enrichment.txt``.
+            idx_qtl: Index of the underscore-delimited filename token used
+                to derive the QTL type from each row's ``file`` value.
+        """
         out_file = in_file.replace('.txt', '_enrichment.txt')
         L = []
         df = pd.read_table(in_file, header=0, sep='\t')
@@ -639,7 +1163,29 @@ class Summary:
         df_out = pd.DataFrame(L, columns=['qtl', 'annotation', 'odds_ratio', 'p_value'])
         df_out.to_csv(out_file, index=False, sep='\t')
 
-    def bar_plot_enrichment(self, in_file='QTL_variants_regulatory_count_enrichment.txt', subset_renaming_file='subset_renaming.txt', xlim=[0, 10], cmap='Dark2', title='Enrichment of QTL significant variants'):
+    def bar_plot_enrichment(
+        self,
+        in_file: str = 'QTL_variants_regulatory_count_enrichment.txt',
+        subset_renaming_file: str = 'subset_renaming.txt',
+        xlim: list[float] = [0, 10],
+        cmap: str = 'Dark2',
+        title: str = 'Enrichment of QTL significant variants',
+    ) -> None:
+        """Plot odds ratios of variant-annotation enrichment as a horizontal bar chart.
+
+        Args:
+            in_file: Path to the table produced by
+                ``test_enrichment_using_fisher_exact``; the output PDF
+                path replaces ``.txt`` with ``_barplot.pdf``.
+            subset_renaming_file: Optional headerless two-column
+                tab-delimited file mapping raw annotation names to display
+                names; when present, also filters and reorders annotations
+                to those listed.
+            xlim: X-axis (odds ratio) limits as ``[low, high]``; skipped if
+                falsy.
+            cmap: Seaborn color palette name.
+            title: Plot title.
+        """
         D = {}
         if subset_renaming_file and os.path.exists(subset_renaming_file):
             df_subset = pd.read_table(subset_renaming_file, header=None, sep='\t')
@@ -668,9 +1214,30 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_nominal_sig_associations(self, in_files=['caQTL_nominal-1.0_w1k_qvalue_extraInfo_sig.txt.gz',
-                                   'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz'],
-                                   out_file='QTL_nomnial_sig_associations.txt', qtl_types={}):
+    def get_nominal_sig_associations(
+        self,
+        in_files: list[str] = [
+            'caQTL_nominal-1.0_w1k_qvalue_extraInfo_sig.txt.gz',
+            'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz',
+            'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz',
+        ],
+        out_file: str = 'QTL_nomnial_sig_associations.txt',
+        qtl_types: dict[str, str] = {},
+    ) -> None:
+        """Pool significant nominal associations from multiple QTL types into one long table.
+
+        For ``caQTL`` files, the phenotype id's trailing comma-separated
+        gene list is exploded into one row per gene; for other QTL types
+        the phenotype id's trailing token is used directly as the gene.
+
+        Args:
+            in_files: Paths to gzip-compressed tab-delimited significant
+                nominal-association files, one per QTL type.
+            out_file: Path to write the pooled association table.
+            qtl_types: Optional mapping from file path to an explicit QTL
+                type label; falls back to the first underscore-delimited
+                filename token when a file is not present in the mapping.
+        """
         L = []
         for f in in_files:
             qtl_type = qtl_types.get(f, f.split('_')[0])
@@ -691,7 +1258,27 @@ class Summary:
         df = pd.DataFrame(L, columns=['phe_id', 'var_id', 'gene', 'beta', 'pval', 'qtl'])
         df.to_csv(out_file, index=False, sep='\t')
 
-    def get_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations.txt', N=3):
+    def get_recurrent_associatoins(
+        self,
+        in_file: str = 'QTL_nominal_sig_associations.txt',
+        N: int = 3,
+    ) -> None:
+        """Find gene-variant associations recurring across at least N QTL types.
+
+        Groups pooled associations (from ``get_nominal_sig_associations``)
+        by gene and then by ``(gene, var_id)`` pair, keeping pairs observed
+        in at least ``N`` distinct QTL types (deduplicated to the
+        lowest-p-value row per QTL type). For each gene, the single
+        best-supported pair (by minimum p-value) is retained in the
+        output.
+
+        Args:
+            in_file: Path to the pooled nominal significant-association
+                table; the output path replaces ``.txt`` with
+                ``_recurrent{N}.txt``.
+            N: Minimum number of distinct QTL types a gene-variant pair
+                must appear in to be considered recurrent.
+        """
         out_file = in_file.replace('.txt', f'_recurrent{N}.txt')
         df = pd.read_table(in_file, header=0, sep='\t')
         D = {}
@@ -714,7 +1301,35 @@ class Summary:
             df_out.columns = df.columns
             df_out.to_csv(out_file, index=False, sep='\t')
 
-    def plot_heatmap_of_recurrent_associatoins(self, in_file='QTL_nominal_sig_associations_recurrent3.txt', cmap='coolwarm', figsize=(4, 8), fontsize=8, customize_cbar=True, genes_highlight=['PTGFRN', 'STARD10', 'PEPD']):
+    def plot_heatmap_of_recurrent_associatoins(
+        self,
+        in_file: str = 'QTL_nominal_sig_associations_recurrent3.txt',
+        cmap: str = 'coolwarm',
+        figsize: tuple[float, float] = (4, 8),
+        fontsize: float = 8,
+        customize_cbar: bool = True,
+        genes_highlight: list[str] = ['PTGFRN', 'STARD10', 'PEPD'],
+    ) -> None:
+        """Draw a clustered heatmap of effect sizes for recurrent multi-QTL-type associations.
+
+        Pivots the recurrent-association table to a gene/variant x QTL-type
+        matrix of beta values (missing combinations filled with 0), draws
+        a row-clustered heatmap without dendrograms, bolds highlighted gene
+        labels, annotates each row with its variant id, and optionally
+        repositions the colorbar above the heatmap.
+
+        Args:
+            in_file: Path to the table produced by
+                ``get_recurrent_associatoins``; the output PDF path
+                replaces ``.txt`` with ``_heatmap.pdf``.
+            cmap: Colormap for the heatmap.
+            figsize: Figure size in inches, as ``(width, height)``.
+            fontsize: Font size for row (gene/variant) labels.
+            customize_cbar: Whether to reposition the colorbar to a small
+                horizontal bar above the heatmap.
+            genes_highlight: Gene names whose y-axis tick labels should be
+                bolded.
+        """
         out_file = in_file.replace('.txt', '_heatmap.pdf')
         df = pd.read_table(in_file, header=0, sep='\t')
         df_pivot = df.pivot(index=['gene', 'var_id'], columns='qtl', values='beta')
@@ -738,11 +1353,11 @@ class Summary:
         row_indices = g.dendrogram_row.reordered_ind
         for i, idx in enumerate(row_indices):
             label = df['variant'].iloc[idx]
-            ax.text(0-0.02, i + 0.5, label, ha='right', va='center', fontsize=fontsize)
+            ax.text(0 - 0.02, i + 0.5, label, ha='right', va='center', fontsize=fontsize)
 
         if customize_cbar:
             hm_pos = g.ax_heatmap.get_position()
-            cax_left = (hm_pos.x0 + hm_pos.x1)/2 - 0.1
+            cax_left = (hm_pos.x0 + hm_pos.x1) / 2 - 0.1
             cax_bottom = hm_pos.y1 + 0.01
             cax_width = 0.2
             cax_height = 0.02
@@ -757,14 +1372,41 @@ class Summary:
 
         plt.savefig(out_file)
 
-    def bar_plot_sig_count_by_params(self, in_file, contrast=['consensus_peaks', 'summit_extended_peaks'], out_suffix='summit_vs_consensus', figsize=(4, 4), cmap='Set2', ylim=[0, 8000], xticklabels=[], fontsize=8):
+    def bar_plot_sig_count_by_params(
+        self,
+        in_file: str,
+        contrast: list[str] = ['consensus_peaks', 'summit_extended_peaks'],
+        out_suffix: str = 'summit_vs_consensus',
+        figsize: tuple[float, float] = (4, 4),
+        cmap: str = 'Set2',
+        ylim: list[float] = [0, 8000],
+        xticklabels: list[str] = [],
+        fontsize: float = 8,
+    ) -> None:
+        """Plot a grouped bar chart of significant-peak counts across two parameter settings.
+
+        Args:
+            in_file: Path to a headerless tab-delimited file whose columns
+                are ``[count, file, param1, param2]``; the output PDF path
+                is derived by appending ``_{out_suffix}.pdf`` after
+                stripping ``.txt``.
+            contrast: The two ``param1`` values to compare; rows with other
+                values are dropped, and rows are ordered to match this
+                list.
+            out_suffix: Suffix appended to the output PDF filename.
+            figsize: Figure size in inches, as ``(width, height)``.
+            cmap: Seaborn color palette name.
+            ylim: Y-axis limits as ``[low, high]``.
+            xticklabels: Optional custom x-axis tick labels.
+            fontsize: Font size for the bar-value labels.
+        """
         df = pd.read_table(in_file, header=None, sep='\t')
         df.columns = ['Number of significant peaks', 'file', 'param1', 'param2']
-    
+
         df = df[df['param1'].isin(contrast)]
         df.sort_values(by='param1', inplace=True, key=lambda x: [contrast.index(i) for i in x])
         print(df)
-    
+
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
         sns.barplot(x='param1', y='Number of significant peaks', hue='param2', data=df, ax=ax, palette=cmap)
@@ -775,11 +1417,28 @@ class Summary:
         ax.set_ylim(ylim)
         if xticklabels:
             ax.set_xticklabels(xticklabels)
-    
+
         plt.tight_layout()
         plt.savefig(f'{in_file.split(".txt")[0]}_{out_suffix}.pdf')
 
-    def prs_overlap_with_qtl(self, in_file, in_file2, flank=1e6):
+    def prs_overlap_with_qtl(self, in_file: str, in_file2: str, flank: float = 1e6) -> None:
+        """Find QTL associations overlapping PRS variants within a flanking window, per PRS variant.
+
+        For each PRS variant in ``in_file``, queries the tabix-indexed
+        ``in_file2`` for records within ``flank`` base pairs, then inner
+        joins the PRS row with matching QTL rows on rsID/``var_id``.
+        Rows that raise an exception (e.g. missing tabix contig) are
+        silently skipped.
+
+        Args:
+            in_file: Path to a CSV of PRS variants with ``contig_id``,
+                ``position_hg38``, and ``rsid`` columns.
+            in_file2: Path to a tabix-indexed, gzip-compressed tab-delimited
+                QTL association file with a header row and a ``var_id``
+                column.
+            flank: Half-width, in base pairs, of the genomic window queried
+                around each PRS variant's position.
+        """
         df = pd.read_table(in_file, header=0, sep=',')
         tb = tabix.open(in_file2)
         df2_cols = pd.read_table(in_file2, header=0, sep='\t', nrows=1).columns
@@ -804,11 +1463,33 @@ class Summary:
             out_file = in_file.split('.csv')[0] + '_' + in_file2.split('.txt')[0] + '_overlap.txt'
             df.to_csv(out_file, index=False, sep='\t')
 
-    def count_overlap_with_prs(self, in_files=['t2dp_suzuki24_ma_eQTL_nominal-1.0_w1M_PC25_extraInfo_sig_overlap.txt'], out_file='QTL_variants_prs_count_t2dp_suzuki24.txt', fsep='_ma_'):
+    def count_overlap_with_prs(
+        self,
+        in_files: list[str] = ['t2dp_suzuki24_ma_eQTL_nominal-1.0_w1M_PC25_extraInfo_sig_overlap.txt'],
+        out_file: str = 'QTL_variants_prs_count_t2dp_suzuki24.txt',
+        fsep: str = '_ma_',
+    ) -> None:
+        """Count, per PRS group, how many significant/non-significant QTL variants overlap PRS hits.
+
+        For each overlap file (produced by ``prs_overlap_with_qtl`` on the
+        significant-variant subset), locates the matching significant and
+        non-significant variant-id lists and the corresponding full/",
+        non-significant overlap files, then for every PRS ``group`` counts
+        how many of the significant and non-significant variants are
+        represented in the overlap.
+
+        Args:
+            in_files: Paths to significant-variant PRS overlap files (named
+                ``..._sig_overlap.txt``).
+            out_file: Path to write the combined in/out count table.
+            fsep: Separator substring used to strip the PRS-specific prefix
+                off the filename to recover the base QTL variant-list
+                filenames.
+        """
         L = []
         for f in in_files:
-            sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_sig_variants.txt') 
-            non_sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_non_sig_variants.txt') 
+            sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_sig_variants.txt')
+            non_sig_variants_file = f.split(fsep)[-1].replace('_sig_overlap.txt', '_non_sig_variants.txt')
             sig_variants = set(pd.read_table(sig_variants_file, header=None, sep='\t').iloc[:, 0].values)
             non_sig_variants = set(pd.read_table(non_sig_variants_file, header=None, sep='\t').iloc[:, 0].values)
 
@@ -818,7 +1499,7 @@ class Summary:
             df_all = pd.read_table(f_all, header=0, sep='\t')
 
             for g in df_all['group'].unique():
-                df_sig_sub = df_sig[(df_sig['group'] == g) & df_sig['var_id'].isin(sig_variants)] 
+                df_sig_sub = df_sig[(df_sig['group'] == g) & df_sig['var_id'].isin(sig_variants)]
                 df_non_sig_sub = df_all[(df_all['group'] == g) & df_all['var_id'].isin(non_sig_variants)]
                 n_sig = df_sig_sub['var_id'].nunique()
                 n_non_sig = df_non_sig_sub['var_id'].nunique()
@@ -828,7 +1509,28 @@ class Summary:
         df.columns = ['file', 'annotation', 'in_count', 'out_count']
         df.to_csv(out_file, index=False, sep='\t')
 
-    def count_overlap_sig_pair_eQTL_GTEx(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', in_files=['GTEx_Analysis_v11_eQTL/Adipose_Subcutaneous.v11.eQTLs.signif_pairs.parquet'], out_file='QTL_sig_pair_overlap_gtex_count.txt', cols=['file', 'eQTL_sig_pair_count', 'GTEx_sig_pair_count', 'overlap_count']):
+    def count_overlap_sig_pair_eQTL_GTEx(
+        self,
+        in_file: str = 'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz',
+        in_files: list[str] = ['GTEx_Analysis_v11_eQTL/Adipose_Subcutaneous.v11.eQTLs.signif_pairs.parquet'],
+        out_file: str = 'QTL_sig_pair_overlap_gtex_count.txt',
+        cols: list[str] = ['file', 'eQTL_sig_pair_count', 'GTEx_sig_pair_count', 'overlap_count'],
+    ) -> None:
+        """Count gene-variant pair overlap between significant islet eQTL and GTEx tissue eQTL.
+
+        Builds a ``gene_chrom_pos_ref_alt`` pair key for the islet eQTL
+        table and a ``gene_variant`` pair key (stripping the GTEx build
+        suffix) for each GTEx parquet file, then reports the pair counts
+        in each set and their overlap.
+
+        Args:
+            in_file: Path to the gzip-compressed significant islet eQTL
+                table.
+            in_files: Paths to GTEx ``signif_pairs.parquet`` files, one per
+                tissue.
+            out_file: Path to write the overlap-count table.
+            cols: Output column names.
+        """
         df = pd.read_table(in_file, header=0, sep='\t')
         pairs = []
         for n in range(df.shape[0]):
@@ -856,7 +1558,35 @@ class Summary:
         df_out = pd.DataFrame(L, columns=cols)
         df_out.to_csv(out_file, index=False, sep='\t')
 
-    def bar_plot_overlap_eQTL_GTEx(self, in_file='QTL_sig_pair_overlap_gtex_count.txt', cmap='colorblind', title='Overlap between eQTL and GTEx', subset_renaming_file='subset_renaming.txt', ratio_base='eQTL_sig_pair_count', figsize=(4, 4)):
+    def bar_plot_overlap_eQTL_GTEx(
+        self,
+        in_file: str = 'QTL_sig_pair_overlap_gtex_count.txt',
+        cmap: str = 'colorblind',
+        title: str = 'Overlap between eQTL and GTEx',
+        subset_renaming_file: str = 'subset_renaming.txt',
+        ratio_base: str = 'eQTL_sig_pair_count',
+        figsize: tuple[float, float] = (4, 4),
+    ) -> None:
+        """Plot the percent overlap between islet eQTL and each GTEx tissue as a bar chart.
+
+        Tissues are optionally renamed/filtered via ``subset_renaming_file``,
+        otherwise derived from the first underscore-delimited token of each
+        filename; bars are sorted by descending mean overlap ratio per
+        tissue.
+
+        Args:
+            in_file: Path to the table produced by
+                ``count_overlap_sig_pair_eQTL_GTEx``.
+            cmap: Seaborn color palette name.
+            title: Plot title.
+            subset_renaming_file: Optional headerless two-column
+                tab-delimited file mapping raw filenames to display tissue
+                names.
+            ratio_base: Column name used as the denominator when computing
+                the percent-overlap ratio; also used to name the output
+                file.
+            figsize: Figure size in inches, as ``(width, height)``.
+        """
         out_file = in_file.replace('.txt', f'_on_{ratio_base.split("_")[0]}_barplot.pdf')
         D = {}
         if os.path.exists(subset_renaming_file):
@@ -868,7 +1598,7 @@ class Summary:
             df.dropna(subset=['Tissue'], inplace=True)
         else:
             df['Tissue'] = [x.split('_')[0] for x in df['file']]
-        df['ratio'] = df['overlap_count']/df[ratio_base] * 100
+        df['ratio'] = df['overlap_count'] / df[ratio_base] * 100
 
         T = {}
         for gi, g in df.groupby('Tissue'):
@@ -886,7 +1616,20 @@ class Summary:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_overlap_sig_pair_pQTL_UKBBplasma(self, in_file='pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', in_file2='UKB-PPP_pQTL_Euro_sig_rsID.txt.gz'):
+    def get_overlap_sig_pair_pQTL_UKBBplasma(
+        self,
+        in_file: str = 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz',
+        in_file2: str = 'UKB-PPP_pQTL_Euro_sig_rsID.txt.gz',
+    ) -> None:
+        """Merge significant islet pQTL with significant UK Biobank plasma pQTL on gene-rsID pairs.
+
+        Args:
+            in_file: Path to the gzip-compressed significant islet pQTL
+                table.
+            in_file2: Path to the gzip-compressed significant UKBB plasma
+                pQTL table; the output path concatenates the two input
+                basenames (stripping ``.txt.gz`` from ``in_file``).
+        """
         df = pd.read_table(in_file, header=0, sep='\t')
         df2 = pd.read_table(in_file2, header=0, sep='\t')
 
@@ -910,8 +1653,57 @@ class Summary:
         out_file = in_file.split('.txt.gz')[0] + '_' + in_file2
         df.to_csv(out_file, index=False, sep='\t')
 
-    def correlation_plot_pQTL_UKBBplasma(self, in_file='pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_UKB-PPP_pQTL_Euro_sig_rsID.txt.gz', beta_x='slope', beta_y='BETA', cmap='Blues', xlabel='beta, significant pQTL in islets', ylabel='beta, significant pQTL in plasma\n(pvalue < 5e-6, UKBB)', figsize=(4, 4), xlim=[-2, 2], ylim=[-2, 2], line_params={'hline': [[-1.5, 1.5], [0, 0]], 'vline': [[0, 0], [-1.5, 1.5]], 'color': 'orange', 'ls': '--', 'lw': 1}, title=None, color='C0', scatter_size=6):
-        out_file = in_file.split('.txt')[0] +  '_correlation.pdf'
+    def correlation_plot_pQTL_UKBBplasma(
+        self,
+        in_file: str = 'pQTL_nominal-1.0_w1M_PC25_extraInfo_sig_UKB-PPP_pQTL_Euro_sig_rsID.txt.gz',
+        beta_x: str = 'slope',
+        beta_y: str = 'BETA',
+        cmap: str = 'Blues',
+        xlabel: str = 'beta, significant pQTL in islets',
+        ylabel: str = 'beta, significant pQTL in plasma\n(pvalue < 5e-6, UKBB)',
+        figsize: tuple[float, float] = (4, 4),
+        xlim: list[float] = [-2, 2],
+        ylim: list[float] = [-2, 2],
+        line_params: dict[str, Any] = {
+            'hline': [[-1.5, 1.5], [0, 0]],
+            'vline': [[0, 0], [-1.5, 1.5]],
+            'color': 'orange',
+            'ls': '--',
+            'lw': 1,
+        },
+        title: str | None = None,
+        color: str = 'C0',
+        scatter_size: float = 6,
+    ) -> None:
+        """Plot a regression of islet pQTL effect sizes against UK Biobank plasma pQTL effect sizes.
+
+        Draws reference horizontal/vertical dashed lines at the origin,
+        and if ``title`` is not given, computes and displays the percent
+        of shared pQTL that are concordant in direction (both effects
+        positive or both negative).
+
+        Args:
+            in_file: Path to the merged table produced by
+                ``get_overlap_sig_pair_pQTL_UKBBplasma``; the output PDF
+                path replaces ``.txt`` with ``_correlation.pdf``.
+            beta_x: Column name for the islet pQTL effect size.
+            beta_y: Column name for the UKBB plasma pQTL effect size.
+            cmap: Unused color-palette parameter kept for signature
+                consistency with sibling plotting methods.
+            xlabel: X-axis label.
+            ylabel: Y-axis label.
+            figsize: Figure size in inches, as ``(width, height)``.
+            xlim: X-axis limits as ``[low, high]``.
+            ylim: Y-axis limits as ``[low, high]``.
+            line_params: Dict describing the reference lines, with keys
+                ``hline``/``vline`` (each a pair of x/y coordinate lists),
+                ``color``, ``ls``, and ``lw``.
+            title: Plot title; computed automatically (concordance
+                percentage) when None.
+            color: Color for the scatter/regression points.
+            scatter_size: Marker size for the scatter points.
+        """
+        out_file = in_file.split('.txt')[0] + '_correlation.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
@@ -923,19 +1715,38 @@ class Summary:
         ax.set_ylim(ylim)
         ax.set_xticks(range(xlim[0], xlim[1] + 1))
         ax.set_yticks(range(ylim[0], ylim[1] + 1))
-        ax.plot(line_params['hline'][0], line_params['hline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
-        ax.plot(line_params['vline'][0], line_params['vline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
+        ax.plot(
+            line_params['hline'][0], line_params['hline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
+        ax.plot(
+            line_params['vline'][0], line_params['vline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
 
         if title is None:
-            wh1 = (df[beta_x]  < 0) & (df[beta_y] < 0)
-            wh2 = (df[beta_x]  > 0) & (df[beta_y] > 0)
-            df_con = df.loc[wh1|wh2, ]
-            title = f'{df_con.shape[0]/df.shape[0]*100:.1f}% shared pQTL\nare concordant in direction'
+            wh1 = (df[beta_x] < 0) & (df[beta_y] < 0)
+            wh2 = (df[beta_x] > 0) & (df[beta_y] > 0)
+            df_con = df.loc[wh1 | wh2, ]
+            title = f'{df_con.shape[0] / df.shape[0] * 100:.1f}% shared pQTL\nare concordant in direction'
         ax.set_title(title)
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def get_overlap_sig_pair_eQTL_InsPIRE(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz', in_file2='InsPIRE_Gene_eQTL.txt'):
+    def get_overlap_sig_pair_eQTL_InsPIRE(
+        self,
+        in_file: str = 'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig.txt.gz',
+        in_file2: str = 'InsPIRE_Gene_eQTL.txt',
+    ) -> None:
+        """Merge significant islet eQTL with the InsPIRE islet eQTL dataset on gene-rsID pairs.
+
+        Args:
+            in_file: Path to the gzip-compressed significant islet eQTL
+                table.
+            in_file2: Path to the InsPIRE gene-level eQTL table; the output
+                path concatenates the two input basenames (stripping
+                ``.txt.gz`` from ``in_file``).
+        """
         df = pd.read_table(in_file, header=0, sep='\t')
         df2 = pd.read_table(in_file2, header=0, sep='\t')
 
@@ -959,8 +1770,56 @@ class Summary:
         out_file = in_file.split('.txt.gz')[0] + '_' + in_file2
         df.to_csv(out_file, index=False, sep='\t')
 
-    def correlation_plot_eQTL_InsPIRE(self, in_file='eQTL_nominal-1.0_w1M_PC25_extraInfo_sig_InsPIRE_Gene_eQTL.txt', beta_x='slope', beta_y='Slope', cmap='Blues', xlabel='beta, significant eQTL in islets', ylabel='beta, significant eQTL in islets\n(InsPIRE)', figsize=(4, 4), xlim=[-2, 2], ylim=[-2, 2], line_params={'hline': [[-1.5, 1.5], [0, 0]], 'vline': [[0, 0], [-1.5, 1.5]], 'color': 'orange', 'ls': '--', 'lw': 1}, title=None, color='C0', scatter_size=6):
-        out_file = in_file.split('.txt')[0] +  '_correlation.pdf'
+    def correlation_plot_eQTL_InsPIRE(
+        self,
+        in_file: str = 'eQTL_nominal-1.0_w1M_PC25_extraInfo_sig_InsPIRE_Gene_eQTL.txt',
+        beta_x: str = 'slope',
+        beta_y: str = 'Slope',
+        cmap: str = 'Blues',
+        xlabel: str = 'beta, significant eQTL in islets',
+        ylabel: str = 'beta, significant eQTL in islets\n(InsPIRE)',
+        figsize: tuple[float, float] = (4, 4),
+        xlim: list[float] = [-2, 2],
+        ylim: list[float] = [-2, 2],
+        line_params: dict[str, Any] = {
+            'hline': [[-1.5, 1.5], [0, 0]],
+            'vline': [[0, 0], [-1.5, 1.5]],
+            'color': 'orange',
+            'ls': '--',
+            'lw': 1,
+        },
+        title: str | None = None,
+        color: str = 'C0',
+        scatter_size: float = 6,
+    ) -> None:
+        """Plot a regression of islet eQTL effect sizes against InsPIRE islet eQTL effect sizes.
+
+        Draws reference horizontal/vertical dashed lines at the origin,
+        and if ``title`` is not given, computes and displays the percent
+        of shared eQTL that are concordant in direction.
+
+        Args:
+            in_file: Path to the merged table produced by
+                ``get_overlap_sig_pair_eQTL_InsPIRE``; the output PDF path
+                replaces ``.txt`` with ``_correlation.pdf``.
+            beta_x: Column name for the islet eQTL effect size.
+            beta_y: Column name for the InsPIRE eQTL effect size.
+            cmap: Unused color-palette parameter kept for signature
+                consistency with sibling plotting methods.
+            xlabel: X-axis label.
+            ylabel: Y-axis label.
+            figsize: Figure size in inches, as ``(width, height)``.
+            xlim: X-axis limits as ``[low, high]``.
+            ylim: Y-axis limits as ``[low, high]``.
+            line_params: Dict describing the reference lines, with keys
+                ``hline``/``vline`` (each a pair of x/y coordinate lists),
+                ``color``, ``ls``, and ``lw``.
+            title: Plot title; computed automatically (concordance
+                percentage) when None.
+            color: Color for the scatter/regression points.
+            scatter_size: Marker size for the scatter points.
+        """
+        out_file = in_file.split('.txt')[0] + '_correlation.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
@@ -972,21 +1831,39 @@ class Summary:
         ax.set_ylim(ylim)
         ax.set_xticks(range(xlim[0], xlim[1] + 1))
         ax.set_yticks(range(ylim[0], ylim[1] + 1))
-        ax.plot(line_params['hline'][0], line_params['hline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
-        ax.plot(line_params['vline'][0], line_params['vline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
+        ax.plot(
+            line_params['hline'][0], line_params['hline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
+        ax.plot(
+            line_params['vline'][0], line_params['vline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
 
         if title is None:
-            wh1 = (df[beta_x]  < 0) & (df[beta_y] < 0)
-            wh2 = (df[beta_x]  > 0) & (df[beta_y] > 0)
-            df_con = df.loc[wh1|wh2, ]
-            title = f'{df_con.shape[0]/df.shape[0]*100:.1f}% shared eQTL\nare concordant in direction'
+            wh1 = (df[beta_x] < 0) & (df[beta_y] < 0)
+            wh2 = (df[beta_x] > 0) & (df[beta_y] > 0)
+            df_con = df.loc[wh1 | wh2, ]
+            title = f'{df_con.shape[0] / df.shape[0] * 100:.1f}% shared eQTL\nare concordant in direction'
         ax.set_title(title)
         plt.tight_layout()
         plt.savefig(out_file)
 
+    def get_overlap_sig_pair_eQTLexon_sQTL(
+        self,
+        in_file: str = 'eQTLexon_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz',
+        in_file2: str = 'sQTL_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz',
+    ) -> None:
+        """Merge significant exon-level eQTL with significant sQTL on shared variant and exon id.
 
-
-    def get_overlap_sig_pair_eQTLexon_sQTL(self, in_file='eQTLexon_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz', in_file2='sQTL_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz'):
+        Args:
+            in_file: Path to the gzip-compressed significant exon-level
+                eQTL table; the exon id is parsed as the fourth
+                underscore-delimited token of ``phe_id``.
+            in_file2: Path to the gzip-compressed significant sQTL table,
+                parsed the same way; the output path concatenates the two
+                input basenames (stripping ``.txt.gz`` from ``in_file``).
+        """
         df1 = pd.read_table(in_file, header=0, sep='\t', low_memory=False)
         df2 = pd.read_table(in_file2, header=0, sep='\t', low_memory=False)
         df1['ExonID'] = df1['phe_id'].apply(lambda x: x.split('_')[3])
@@ -996,8 +1873,56 @@ class Summary:
         out_file = in_file.split('.txt.gz')[0] + '_' + in_file2
         df.to_csv(out_file, index=False, sep='\t')
 
-    def correlation_plot_eQTLexon_sQTL(self, in_file='eQTLexon_nominal-1.0_w100k_PC25_extraInfo_sig_sQTL_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz', beta_x='slope_eQTLexon', beta_y='slope_sQTL', cmap='Blues', xlabel='beta, significant eQTL on exon level', ylabel='beta, significant sQTL', figsize=(4, 4), xlim=[-2, 2], ylim=[-2, 2], line_params={'hline': [[-1.5, 1.5], [0, 0]], 'vline': [[0, 0], [-1.5, 1.5]], 'color': 'orange', 'ls': '--', 'lw': 1}, title=None, color='C1', scatter_size=1):
-        out_file = in_file.split('.txt')[0] +  '_correlation.pdf'
+    def correlation_plot_eQTLexon_sQTL(
+        self,
+        in_file: str = 'eQTLexon_nominal-1.0_w100k_PC25_extraInfo_sig_sQTL_nominal-1.0_w100k_PC25_extraInfo_sig.txt.gz',
+        beta_x: str = 'slope_eQTLexon',
+        beta_y: str = 'slope_sQTL',
+        cmap: str = 'Blues',
+        xlabel: str = 'beta, significant eQTL on exon level',
+        ylabel: str = 'beta, significant sQTL',
+        figsize: tuple[float, float] = (4, 4),
+        xlim: list[float] = [-2, 2],
+        ylim: list[float] = [-2, 2],
+        line_params: dict[str, Any] = {
+            'hline': [[-1.5, 1.5], [0, 0]],
+            'vline': [[0, 0], [-1.5, 1.5]],
+            'color': 'orange',
+            'ls': '--',
+            'lw': 1,
+        },
+        title: str | None = None,
+        color: str = 'C1',
+        scatter_size: float = 1,
+    ) -> None:
+        """Plot a regression of exon-level eQTL effect sizes against sQTL effect sizes.
+
+        Draws reference horizontal/vertical dashed lines at the origin,
+        and if ``title`` is not given, computes and displays the percent
+        of shared exon associations that are concordant in direction.
+
+        Args:
+            in_file: Path to the merged table produced by
+                ``get_overlap_sig_pair_eQTLexon_sQTL``; the output PDF path
+                replaces ``.txt`` with ``_correlation.pdf``.
+            beta_x: Column name for the exon-level eQTL effect size.
+            beta_y: Column name for the sQTL effect size.
+            cmap: Unused color-palette parameter kept for signature
+                consistency with sibling plotting methods.
+            xlabel: X-axis label.
+            ylabel: Y-axis label.
+            figsize: Figure size in inches, as ``(width, height)``.
+            xlim: X-axis limits as ``[low, high]``.
+            ylim: Y-axis limits as ``[low, high]``.
+            line_params: Dict describing the reference lines, with keys
+                ``hline``/``vline`` (each a pair of x/y coordinate lists),
+                ``color``, ``ls``, and ``lw``.
+            title: Plot title; computed automatically (concordance
+                percentage) when None.
+            color: Color for the scatter/regression points.
+            scatter_size: Marker size for the scatter points.
+        """
+        out_file = in_file.split('.txt')[0] + '_correlation.pdf'
         df = pd.read_table(in_file, header=0, sep='\t')
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot()
@@ -1009,16 +1934,20 @@ class Summary:
         ax.set_ylim(ylim)
         ax.set_xticks(range(xlim[0], xlim[1] + 1))
         ax.set_yticks(range(ylim[0], ylim[1] + 1))
-        ax.plot(line_params['hline'][0], line_params['hline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
-        ax.plot(line_params['vline'][0], line_params['vline'][1], color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'])
+        ax.plot(
+            line_params['hline'][0], line_params['hline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
+        ax.plot(
+            line_params['vline'][0], line_params['vline'][1],
+            color=line_params['color'], ls=line_params['ls'], lw=line_params['lw'],
+        )
 
         if title is None:
-            wh1 = (df[beta_x]  < 0) & (df[beta_y] < 0)
-            wh2 = (df[beta_x]  > 0) & (df[beta_y] > 0)
-            df_con = df.loc[wh1|wh2, ]
-            title = f'{df_con.shape[0]/df.shape[0]*100:.1f}% shared exon\nare concordant in direction'
+            wh1 = (df[beta_x] < 0) & (df[beta_y] < 0)
+            wh2 = (df[beta_x] > 0) & (df[beta_y] > 0)
+            df_con = df.loc[wh1 | wh2, ]
+            title = f'{df_con.shape[0] / df.shape[0] * 100:.1f}% shared exon\nare concordant in direction'
         ax.set_title(title)
         plt.tight_layout()
         plt.savefig(out_file)
-
-

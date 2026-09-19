@@ -1,14 +1,70 @@
+"""Core QTL mapping utilities shared across caQTL, eQTL, and pQTL pipelines.
+
+This module defines the :class:`QTL` base class, which provides phenotype
+preparation (sample subsetting/renaming, feature filtering), BED file
+generation for QTLtools, PCA-based covariate computation, QTLtools job
+script generation, and post-processing of QTLtools output (significance
+filtering and variant annotation).
+"""
+from typing import Any
+
 from .utils import *
 
+
 class QTL:
-    def __init__(self):
-        self.window_size_name = {1000:'1k', 5000:'5k', 10000:'10k', 50000:'50k', 100000:'100k', 500000:'500k', 1000000:'1M'}
+    """Base class providing shared QTL mapping pipeline functionality.
+
+    Subclasses (e.g. ``EQTL``, ``CAQTL``, ``PQTL``) build on top of these
+    methods to implement modality-specific QTL mapping workflows, mostly by
+    generating and running shell commands for tools such as QTLtools,
+    bcftools, and bgzip/tabix.
+
+    Attributes:
+        window_size_name: Mapping from cis-window size in base pairs to a
+            short human-readable label (e.g. ``1000`` -> ``'1k'``), used when
+            naming QTLtools output directories/files.
+        QTLtools_env: Name of the conda environment in which QTLtools is
+            installed. When set, QTLtools commands are prefixed with
+            ``conda run -n {QTLtools_env}``.
+    """
+
+    def __init__(self) -> None:
+        """Initialize default window-size naming and the QTLtools conda env."""
+        self.window_size_name = {
+            1000: '1k', 5000: '5k', 10000: '10k', 50000: '50k',
+            100000: '100k', 500000: '500k', 1000000: '1M',
+        }
         self.QTLtools_env = 'QTLtools'
 
-    def subset_rename_samples(self, in_file='ATACseq_peakCounts_closestGene_TPM.txt', sample_file='sample_subset.txt'):
-        '''
-        subset samples to include those shared between genotype and phenotype data, and rename samples to match those in genotype data if needed. The sample file should be a two-column tab-delimited file, with the first column being the sample names in the phenotype data, and the second column being the corresponding sample names in the genotype data. If the second column is not provided, the sample names will not be renamed. sample order should be the same as in the genotype data, which is important for downstream QTL analysis.
-        '''
+    def subset_rename_samples(
+        self,
+        in_file: str = 'ATACseq_peakCounts_closestGene_TPM.txt',
+        sample_file: str = 'sample_subset.txt',
+    ) -> None:
+        """Subset and optionally rename phenotype samples to match genotype samples.
+
+        Subsets samples to include those shared between genotype and
+        phenotype data, and renames samples to match those in the genotype
+        data if needed. The sample file should be a two-column
+        tab-delimited file, with the first column being the sample names in
+        the phenotype data, and the second column being the corresponding
+        sample names in the genotype data. If the second column is not
+        provided, the sample names will not be renamed. Sample order should
+        be the same as in the genotype data, which is important for
+        downstream QTL analysis.
+
+        Args:
+            in_file: Tab-delimited phenotype file whose first two columns
+                are feature identifiers and whose remaining columns are
+                per-sample values.
+            sample_file: Tab-delimited sample mapping file. First column is
+                the phenotype sample name, optional second column is the
+                corresponding genotype sample name.
+
+        Raises:
+            ValueError: If some samples in `sample_file` are not found in
+                `in_file`.
+        """
         df = pd.read_table(in_file, header=0, sep='\t')
         df_sample = pd.read_table(sample_file, header=None, sep='\t')
         flag = all(s in df.columns[2:] for s in df_sample.iloc[:, 0])
@@ -20,7 +76,38 @@ class QTL:
         out_file = in_file.replace('.txt', '_subsetRenamed.txt')
         df_subset.to_csv(out_file, header=True, index=False, sep='\t')
 
-    def filter_phenotype_features(self, tpm_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed.txt', counts_file='ATACseq_peakCounts_closestGene_subsetRenamed.txt', params={'tpm':0.1, 'counts':6, 'sample_percent':0.2}):
+    def filter_phenotype_features(
+        self,
+        tpm_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed.txt',
+        counts_file: str = 'ATACseq_peakCounts_closestGene_subsetRenamed.txt',
+        params: dict[str, Any] = {'tpm': 0.1, 'counts': 6, 'sample_percent': 0.2},
+    ) -> None:
+        """Filter phenotype features by minimum expression/accessibility thresholds.
+
+        A feature is retained if the fraction of samples meeting the `tpm`
+        threshold is at least `sample_percent`, and (if `counts_file` is
+        given) the fraction of samples meeting the `counts` threshold is
+        also at least `sample_percent`. The output file name is derived
+        from `tpm_file` by inserting ``peak``, ``exon``, or ``gene``
+        (whichever substring is found in `tpm_file`, defaulting to
+        ``gene``) before the ``Filtered`` suffix.
+
+        Args:
+            tpm_file: Tab-delimited file of TPM (or similar normalized)
+                values, with the first two columns being feature metadata
+                and the rest being per-sample values.
+            counts_file: Optional tab-delimited file of raw counts, in the
+                same layout as `tpm_file`. If falsy, only the TPM filter is
+                applied.
+            params: Filtering thresholds with keys ``'tpm'`` (minimum TPM
+                value), ``'counts'`` (minimum count value), and
+                ``'sample_percent'`` (minimum fraction of samples passing
+                the threshold).
+
+        Raises:
+            FileNotFoundError: If `tpm_file` does not exist, or if
+                `counts_file` is given but does not exist.
+        """
         if os.path.exists(tpm_file):
             df_tpm = pd.read_table(tpm_file, header=0, sep='\t')
         else:
@@ -36,7 +123,7 @@ class QTL:
         for n in range(df_tpm.shape[0]):
             L = df_tpm.iloc[n, 2:] >= params['tpm']
             flag = False
-            if sum(L)/len(L) >= params['sample_percent']:
+            if sum(L) / len(L) >= params['sample_percent']:
                 flag = True
             wh.append(flag)
         wh = np.array(wh)
@@ -46,7 +133,7 @@ class QTL:
             for n in range(df_counts.shape[0]):
                 L = df_counts.iloc[n, 2:] >= params['counts']
                 flag = False
-                if sum(L)/len(L) >= params['sample_percent']:
+                if sum(L) / len(L) >= params['sample_percent']:
                     flag = True
                 wh2.append(flag)
             wh2 = np.array(wh2)
@@ -57,7 +144,34 @@ class QTL:
         df_tpm = df_tpm.loc[wh, ]
         df_tpm.to_csv(tpm_file_out, header=True, index=False, sep='\t')
 
-    def make_bed_for_QTLtools(self, in_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.txt', qtl_type='caQTL', gtf_file='Homo_sapiens.GRCh38.115.gtf'):
+    def make_bed_for_QTLtools(
+        self,
+        in_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.txt',
+        qtl_type: str = 'caQTL',
+        gtf_file: str = 'Homo_sapiens.GRCh38.115.gtf',
+    ) -> None:
+        """Build a bgzipped, tabix-indexed BED file of phenotypes for QTLtools.
+
+        For ``caQTL``, the feature coordinates are parsed directly from the
+        peak identifier (``chr_start_end`` format). For ``eQTL``, ``pQTL``,
+        ``eQTLexon``, and ``sQTL``, gene coordinates and strand are looked
+        up from the gene position table generated by `gtf_to_GenePosType`
+        (``{gtf_file}`` with ``.gtf`` replaced by ``_GenePosType.txt``), and
+        the transcription start site is used as the feature position.
+
+        Args:
+            in_file: Tab-delimited, filtered phenotype file (output of
+                `filter_phenotype_features`).
+            qtl_type: One of ``'caQTL'``, ``'eQTL'``, ``'pQTL'``,
+                ``'eQTLexon'``, or ``'sQTL'``, controlling how feature
+                coordinates are determined.
+            gtf_file: GTF file name used to locate the pre-computed gene
+                position table for non-``caQTL`` QTL types.
+
+        Raises:
+            ValueError: If the gene position table derived from `gtf_file`
+                does not exist.
+        """
         out_file = in_file.replace('.txt', '.bed')
         df = pd.read_table(in_file, header=0, sep='\t')
         df_sample = df.iloc[:, 2:]
@@ -124,7 +238,23 @@ class QTL:
         subprocess.run(cmd, shell=True)
         print('bed file for QTLtools generated and indexed.')
 
-    def run_PCA_on_bed(self, in_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz', n_pcs=25, scale=True, center=True):
+    def run_PCA_on_bed(
+        self,
+        in_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz',
+        n_pcs: int = 25,
+        scale: bool = True,
+        center: bool = True,
+    ) -> None:
+        """Run QTLtools PCA on a phenotype BED file and keep the top PCs.
+
+        Args:
+            in_file: Bgzipped, tabix-indexed phenotype BED file (as produced
+                by `make_bed_for_QTLtools`).
+            n_pcs: Number of top principal components to keep in the output
+                header file.
+            scale: Whether to pass ``--scale`` to ``QTLtools pca``.
+            center: Whether to pass ``--center`` to ``QTLtools pca``.
+        """
         out_file = in_file.split('.bed.gz')[0]
         out_file_head = in_file.replace('.bed.gz', f'_PC{n_pcs}.txt')
         cmd = f'QTLtools pca --bed {in_file} --out {out_file}'
@@ -139,7 +269,31 @@ class QTL:
         subprocess.run(cmd, shell=True)
         print('PCA on bed file completed.')
 
-    def get_PCA_scree_plot(self, in_file='ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.pca_stats', title='Scree plot', col='prop_var', color='steelblue', figsize=(4, 4), n_pcs_max=80):
+    def get_PCA_scree_plot(
+        self,
+        in_file: str = 'ATACseq_qvalue_peakCounts_closestGene_TPM_peakFiltered.pca_stats',
+        title: str = 'Scree plot',
+        col: str = 'prop_var',
+        color: str = 'steelblue',
+        figsize: tuple[float, float] = (4, 4),
+        n_pcs_max: int = 80,
+    ) -> None:
+        """Plot a PCA scree plot (variance explained per PC) from QTLtools PCA stats.
+
+        Reads the `col` row from a QTLtools ``.pca_stats`` file, writes the
+        per-PC variance explained values to a text file, and saves a bar
+        plot (limited to the first `n_pcs_max` components) as a PDF.
+
+        Args:
+            in_file: QTLtools ``.pca_stats`` file (whitespace-delimited, no
+                header).
+            title: Title to display on the plot.
+            col: Row label (value in the first column of `in_file`) to
+                extract, e.g. ``'prop_var'``.
+            color: Bar color for the seaborn bar plot.
+            figsize: Figure size in inches as ``(width, height)``.
+            n_pcs_max: Maximum number of leading PCs to include in the plot.
+        """
         df = pd.read_table(in_file, header=None, sep=r'\s+')
         df = df[df.iloc[:, 0] == col]
         df_var = pd.DataFrame()
@@ -161,7 +315,22 @@ class QTL:
         plt.tight_layout()
         plt.savefig(out_file)
 
-    def add_extra_covariates(self, in_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt', extra_cov_file='sample_info.txt'):
+    def add_extra_covariates(
+        self,
+        in_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt',
+        extra_cov_file: str = 'sample_info.txt',
+    ) -> None:
+        """Append extra per-sample covariates to a QTLtools covariate file.
+
+        Samples present in `in_file` but missing from `extra_cov_file` are
+        assigned a covariate value of ``0`` (with a warning printed).
+
+        Args:
+            in_file: Whitespace-delimited covariate file (e.g. PCA output)
+                with samples as columns and covariates as rows.
+            extra_cov_file: Tab-delimited file with samples in the first
+                column and one additional covariate per remaining column.
+        """
         out_file = in_file.replace('.txt', '_extraCov.txt')
         df_cov = pd.read_table(extra_cov_file, header=0, sep='\t')
         D = {}
@@ -190,7 +359,65 @@ class QTL:
         df = pd.concat([df, df_extra])
         df.to_csv(out_file, header=True, index=False, sep=' ')
 
-    def get_QTLtools_script(self, pheno_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz', geno_file='genotype_imputed.vcf.gz', cov_file='ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt', out_suffix='PC25', qtl_type='caQTL', qtl_pass=['nominal', 'permute', 'conditional'], n_chunks=30, with_normal=True, with_std_err=True, with_cov=True, window_size=None, fdr_script=None, params={'nominal':1.0, 'permute':1000, 'conditional':0.05, 'seed':42}):
+    def get_QTLtools_script(
+        self,
+        pheno_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz',
+        geno_file: str = 'genotype_imputed.vcf.gz',
+        cov_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt',
+        out_suffix: str = 'PC25',
+        qtl_type: str = 'caQTL',
+        qtl_pass: list[str] = ['nominal', 'permute', 'conditional'],
+        n_chunks: int = 30,
+        with_normal: bool = True,
+        with_std_err: bool = True,
+        with_cov: bool = True,
+        window_size: int | float | None = None,
+        fdr_script: str | None = None,
+        params: dict[str, Any] = {'nominal': 1.0, 'permute': 1000, 'conditional': 0.05, 'seed': 42},
+    ) -> None:
+        """Generate per-chunk QTLtools run scripts and a merge/FDR script.
+
+        For each pass in `qtl_pass`, writes a ``run_{qtl_type}_{qtl}_{out_suffix}.sh``
+        script containing one ``QTLtools cis`` command per chunk, and a
+        ``merge_{qtl_type}_{qtl}_{out_suffix}.sh`` script that concatenates
+        the chunk outputs and (for the ``permute`` pass) runs the FDR
+        correction R script(s).
+
+        Args:
+            pheno_file: Bgzipped phenotype BED file, used to determine and
+                validate sample order.
+            geno_file: Bgzipped VCF genotype file, used to determine and
+                validate sample order.
+            cov_file: Whitespace-delimited covariate file, used to
+                determine and validate sample order.
+            out_suffix: Suffix appended to output directory/script names.
+            qtl_type: QTL modality, e.g. ``'caQTL'``, ``'eQTL'``, ``'pQTL'``,
+                ``'eQTLexon'``, or ``'sQTL'``; determines the default
+                `window_size` when not given explicitly.
+            qtl_pass: QTLtools passes to generate scripts for, any subset of
+                ``['nominal', 'permute', 'conditional']``.
+            n_chunks: Number of chunks to split the genome-wide cis-mapping
+                job into.
+            with_normal: Whether to add ``--normal`` to the QTLtools command.
+            with_std_err: Whether to add ``--std-err`` to the QTLtools command.
+            with_cov: Whether to add ``--cov {cov_file}`` when `cov_file`
+                exists.
+            window_size: Cis window size in bp. If ``None``, defaults to
+                1000 for ``caQTL`` or 1,000,000 for other QTL types.
+            fdr_script: Path to the primary FDR-correction R script used for
+                the ``permute`` pass. If ``None``, defaults to the bundled
+                ``scripts/qtltools_runFDR_cis.R``.
+            params: Per-pass QTLtools thresholds/options with keys
+                ``'nominal'``, ``'permute'``, ``'conditional'`` (each the
+                corresponding QTLtools option value) and ``'seed'`` (random
+                seed used for the ``permute`` pass).
+
+        Raises:
+            ValueError: If sample names/order in `geno_file`, `pheno_file`,
+                and `cov_file` do not all match.
+            FileNotFoundError: If the FDR script is required but cannot be
+                located.
+        """
         if n_chunks < 22:
             print('WARNING: QTLtools may not run properly with if chunks fewer than the number of chromosomes')
 
@@ -241,7 +468,7 @@ class QTL:
                         cmd += ' --std-err'
                     if qtl in ['permute']:
                         cmd += f' --seed {params["seed"]}'
-                    if self.QTLtools_env is not None: 
+                    if self.QTLtools_env is not None:
                         cmd = f'conda run -n {self.QTLtools_env} ' + cmd
                     cmd += f' --out {out_file}'
                     out.write(cmd + '\n')
@@ -256,7 +483,7 @@ class QTL:
                 if qtl == 'permute':
                     fdr_script_padj = BASE / 'scripts/qtltools_runFDR_cis_padj.R'
                     if fdr_script is None:
-                        if  self.QTLtools_env is not None:
+                        if self.QTLtools_env is not None:
                             cmd = f'conda run -n {self.QTLtools_env} which QTLtools'
                             fdr_script = BASE / 'scripts/qtltools_runFDR_cis.R'
                         else:
@@ -264,7 +491,7 @@ class QTL:
                     if os.path.exists(fdr_script):
                         cmd = f'Rscript {fdr_script} {out_file_merged}.gz {params['conditional']} {out_file_merged_prefix}'
                         cmd_padj = f'Rscript {fdr_script_padj} {out_file_merged}.gz {params['conditional']} {out_file_merged_prefix}'
-                        if self.QTLtools_env is not None: 
+                        if self.QTLtools_env is not None:
                             cmd = f'conda run -n {self.QTLtools_env} ' + cmd
                             cmd_padj = f'conda run -n {self.QTLtools_env} ' + cmd_padj
                     else:
@@ -274,7 +501,51 @@ class QTL:
                     cmd_padj = f'''if awk 'NR > 1 {{ if ($NF != "NA") exit 1 }}' {out_file_merged_prefix}.significant.txt; then\n{message}\n{cmd_padj}\nfi'''
                     out.write(cmd_padj + '\n')
 
-    def get_QTLtools_sig_table(self, in_file, qtl_pass=None, thresholds_file=None, significant_file=None, params={'p_col':'nom_pval', 'padj_col':'adj_beta_pval'}):
+    def get_QTLtools_sig_table(
+        self,
+        in_file: str,
+        qtl_pass: str | None = None,
+        thresholds_file: str | None = None,
+        significant_file: str | None = None,
+        params: dict[str, str] = {'p_col': 'nom_pval', 'padj_col': 'adj_beta_pval'},
+    ) -> None:
+        """Filter QTLtools output to significant associations and index it.
+
+        Behavior depends on `qtl_pass` (inferred from `in_file`'s name if
+        not given):
+
+        - ``'nominal'``: keeps lines whose p-value (`params['p_col']`) is
+          below the per-feature threshold from `thresholds_file`.
+        - ``'permute'``: keeps rows whose feature ID is in
+          `significant_file`, sorted by `params['padj_col']`.
+        - ``'conditional'``: keeps backward-significant, best-hit rows, and
+          additionally writes a table of independent signal counts per
+          feature to ``{in_file}_ranks.txt``.
+
+        The resulting significant table is sorted, bgzipped, and
+        tabix-indexed.
+
+        Args:
+            in_file: QTLtools output file (bgzipped for the ``nominal``
+                pass, plain tab-delimited otherwise).
+            qtl_pass: One of ``'nominal'``, ``'permute'``, or
+                ``'conditional'``. If ``None``, inferred from a matching
+                substring in `in_file`.
+            thresholds_file: Whitespace-delimited per-feature p-value
+                threshold file, required for the ``nominal`` pass.
+            significant_file: Whitespace-delimited file of significant
+                feature IDs, required for the ``permute`` pass.
+            params: Column name overrides with keys ``'p_col'`` (nominal
+                p-value column) and ``'padj_col'`` (adjusted p-value
+                column).
+
+        Raises:
+            ValueError: If `qtl_pass` cannot be determined or is invalid,
+                or if a required companion file argument is missing for the
+                inferred/given pass.
+            FileNotFoundError: If `thresholds_file` or `significant_file` is
+                required but does not exist.
+        """
         if qtl_pass is None:
             if in_file.find('nominal') != -1:
                 qtl_pass = 'nominal'
@@ -342,8 +613,37 @@ class QTL:
         cmd = f'head -n 1 {out_file} > {out_file_txt}; tail -n +2 {out_file} | sort -k2,2V -k 3,3n >> {out_file_txt}; bgzip -f {out_file_txt}; tabix -s 2 -b 3 -e 3 -S 1 {out_file_txt}.gz; rm {out_file}'
         print(cmd)
         subprocess.run(cmd, shell=True)
-    
-    def add_extra_info(self, in_file, vcf_file, do_liftover=True, params={'liftover_from':'hg38', 'liftover_to':'hg19'}):
+
+    def add_extra_info(
+        self,
+        in_file: str,
+        vcf_file: str,
+        do_liftover: bool = True,
+        params: dict[str, str] = {'liftover_from': 'hg38', 'liftover_to': 'hg19'},
+    ) -> None:
+        """Annotate a QTLtools output file with allele, MAF, and lifted-over position.
+
+        For each variant referenced in `in_file` (by ID in column 8), looks
+        up the effective/non-effective allele and MAF from `vcf_file`
+        (using the ``MAF=`` INFO field), and optionally lifts the variant
+        position over from `params['liftover_from']` to
+        `params['liftover_to']`. The annotated table is sorted, bgzipped,
+        and tabix-indexed.
+
+        Args:
+            in_file: Bgzipped QTLtools output file with a header line,
+                where column 8 (0-indexed 7) is the variant ID.
+            vcf_file: Bgzipped VCF file used to look up allele and MAF
+                information for each variant.
+            do_liftover: Whether to perform genome-build liftover of
+                variant positions using the `liftover` package.
+            params: Liftover source/target genome build names with keys
+                ``'liftover_from'`` and ``'liftover_to'`` (e.g. ``'hg38'``
+                and ``'hg19'``).
+
+        Raises:
+            FileNotFoundError: If `vcf_file` does not exist.
+        """
         if not os.path.exists(vcf_file):
             raise FileNotFoundError(f'{vcf_file} not found')
 
@@ -399,4 +699,3 @@ class QTL:
             out.write(head + '\t' + '\t'.join(['effective_allele', 'non_effective_allele', 'MAF', f'chr_pos_{params["liftover_to"]}', 'n_var_in_vcf']) + '\n')
         cmd = f'sort -k2,2V -k3,3n {out_file} >> {out_file_txt}; bgzip -f {out_file_txt}; tabix -s 2 -b 3 -e 3 -S 1 {out_file_txt}.gz; rm {out_file}'
         subprocess.run(cmd, shell=True)
-

@@ -1,17 +1,30 @@
+"""Shared utilities for the omniQTL package.
+
+This module configures matplotlib defaults (used by every plotting routine
+in the package), patches ``plt.savefig`` so a single call writes PNG, SVG,
+and PDF versions of a figure, and provides a handful of standalone helpers
+for preparing reference data (dbSNP VCF download, GTF-derived gene position
+tables, VEP annotation scripts) that are reused across the other omniQTL
+modules.
+"""
+
 import os
 import glob
 import json
-import numpy as np
-import pandas as pd
 import subprocess
-import pyranges
-from importlib import resources
-import yaml
 import datetime
 import gzip
+from importlib import resources
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import pyranges
+import yaml
 import tabix
 import liftover
 import matplotlib
+
 matplotlib.use('agg')
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
@@ -37,24 +50,64 @@ plt.rcParams.update({
 })
 BASE = resources.files(__package__.split(".")[0])
 
-# modify plt.savefig to save both pdf, svg, and png
-def plt_savefig(*args, **kwargs):
-	formats = ['.png', '.svg', '.pdf']
-	fig = plt.gcf()
-	name, ext = os.path.splitext(args[0])
-	if ext in formats:
-		for x in formats:
-			f = name + x
-			args = tuple([f]) + args[1:]
-			res = fig.savefig(*args, **kwargs)
-	else:
-		res = fig.savefig(*args, **kwargs)
-	fig.canvas.draw_idle()
-	return res
+
+def plt_savefig(*args: Any, **kwargs: Any) -> Any:
+    """Save the current matplotlib figure as PNG, SVG, and PDF.
+
+    This replaces ``plt.savefig`` (see the monkey-patch below) so every
+    call site in the package transparently produces all three output
+    formats instead of just the one implied by the given file extension.
+    If the first argument's extension is not one of the supported formats,
+    the figure is saved as-is with no format substitution.
+
+    Args:
+        *args: Positional arguments forwarded to ``Figure.savefig``. The
+            first argument is treated as the output file path.
+        **kwargs: Keyword arguments forwarded to ``Figure.savefig``.
+
+    Returns:
+        The return value of the final ``Figure.savefig`` call.
+    """
+    formats = ['.png', '.svg', '.pdf']
+    fig = plt.gcf()
+    name, ext = os.path.splitext(args[0])
+    if ext in formats:
+        for x in formats:
+            f = name + x
+            args = tuple([f]) + args[1:]
+            res = fig.savefig(*args, **kwargs)
+    else:
+        res = fig.savefig(*args, **kwargs)
+    fig.canvas.draw_idle()
+    return res
+
+
 plt.savefig = plt_savefig
 
 
-def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz', assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_report.txt', out_file='dbSNP157_GRCh38.vcf.gz'):
+def get_dbsnp_vcf(
+    vcf_url: str = 'https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/GCF_000001405.40.gz',
+    assembly_report_url: str = (
+        'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/'
+        'GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_report.txt'
+    ),
+    out_file: str = 'dbSNP157_GRCh38.vcf.gz',
+) -> None:
+    """Download and prepare a dbSNP VCF with chromosome names remapped.
+
+    Downloads the NCBI assembly report and dbSNP VCF, builds a chromosome
+    renaming table from the assembly report, and uses ``bcftools annotate``
+    to rewrite the dbSNP VCF's chromosome names (e.g. RefSeq accessions to
+    ``chr1``-style names) before indexing it with ``tabix``. If the initial
+    ``tabix`` indexing fails, the VCF is sorted with ``bcftools sort`` and
+    indexing is retried.
+
+    Args:
+        vcf_url: URL of the dbSNP VCF file to download.
+        assembly_report_url: URL of the NCBI assembly report used to derive
+            the chromosome name mapping.
+        out_file: Path to write the renamed, bgzipped, tabix-indexed VCF.
+    """
     # vcf_url='https://ftp.ncbi.nih.gov/snp/latest_release/VCF/GCF_000001405.25.gz'
     # assembly_report_url='https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.25_GRCh37.p13/GCF_000001405.25_GRCh37.p13_assembly_report.txt'
     # out_file='dbSNP157_GRCh37.vcf.gz'
@@ -89,7 +142,20 @@ def get_dbsnp_vcf(vcf_url='https://ftp.ncbi.nlm.nih.gov/snp/latest_release/VCF/G
         except Exception as e:
             print(f'Error sorting and indexing VCF file: {e}. Please check the VCF file for issues.')
 
-def gtf_to_GenePosType(in_file):
+
+def gtf_to_GenePosType(in_file: str) -> None:
+    """Extract per-gene position and biotype information from a GTF file.
+
+    Parses the ``gene`` feature lines of a GTF file and writes a tab-delimited
+    table (``<in_file>_GenePosType.txt``) with one row per gene: gene name,
+    chromosome, start, end, strand, and biotype. This table is a prerequisite
+    for several downstream functions (e.g. ``QTL.make_bed_for_QTLtools``) that
+    need to look up a gene's TSS and strand by gene ID.
+
+    Args:
+        in_file: Path to the input GTF file. The output file name is derived
+            by replacing the ``.gtf`` suffix with ``_GenePosType.txt``.
+    """
     D = {}
     fin = open(in_file)
     fout = open(in_file.split('.gtf')[0] + '_GenePosType.txt', 'w')
@@ -109,7 +175,7 @@ def gtf_to_GenePosType(in_file):
                 D.setdefault(gene_id, [])
                 D[gene_id].append('\t'.join([gene_name, fields[0], fields[3], fields[4], fields[6], gene_biotype]))
     fin.close()
-    d = sorted(D.items(), key = lambda x : x[0])
+    d = sorted(D.items(), key=lambda x: x[0])
     for item in d:
         if len(set(item[1])) != 1:
             print('Warning:gene_id to multiple gene_name')
@@ -117,11 +183,37 @@ def gtf_to_GenePosType(in_file):
             fout.write(item[0] + '\t' + item[1][0] + '\n')
     fout.close()
 
-def annotate_vcf_with_vep(vcf_file, vep_env='vep115', vep_cache='vep_cache', species='homo_sapiens', assembly='GRCh38'):
+
+def annotate_vcf_with_vep(
+    vcf_file: str,
+    vep_env: str = 'vep115',
+    vep_cache: str = 'vep_cache',
+    species: str = 'homo_sapiens',
+    assembly: str = 'GRCh38',
+) -> None:
+    """Write a shell script that annotates a VCF with Ensembl VEP.
+
+    The generated script runs VEP inside the given conda environment and
+    gzips the resulting annotated VCF. The script is written to disk but not
+    executed.
+
+    Args:
+        vcf_file: Path to the input VCF file to annotate.
+        vep_env: Name of the conda environment containing the ``vep``
+            executable and cache.
+        vep_cache: Path to the VEP cache directory (passed to
+            ``--dir_cache``).
+        species: Species name passed to VEP's ``--species`` option.
+        assembly: Genome assembly name passed to VEP's ``--assembly`` option.
+    """
     out_script = 'run_vep_' + vcf_file.split('.vcf')[0] + '.sh'
     out_file = vcf_file.split('.vcf')[0] + '_vep.vcf'
     with open(out_script, 'w') as fout:
-        cmd = f'conda run -n {vep_env} vep --vcf -i {vcf_file} -o {out_file} --species {species} --assembly {assembly} --cache --dir_cache {vep_cache} --canonical --regulatory --show_ref_allele --force_overwrite'
+        cmd = (
+            f'conda run -n {vep_env} vep --vcf -i {vcf_file} -o {out_file} '
+            f'--species {species} --assembly {assembly} --cache --dir_cache {vep_cache} '
+            f'--canonical --regulatory --show_ref_allele --force_overwrite'
+        )
         fout.write(cmd + '\n')
         cmd = f'gzip {out_file}'
         fout.write(cmd + '\n')
