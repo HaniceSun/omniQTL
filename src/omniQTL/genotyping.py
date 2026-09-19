@@ -235,6 +235,9 @@ class Genotyping(ArrayQC):
         expr = ''
         if 'MAF' in params and 'R2' in params:
             expr = f"MAF>{params['MAF']} && R2>{params['R2']}"
+        elif 'MAC' in params and 'R2' in params:
+            # to be consistent with the GWAS analysis
+            expr = f"MAC>={params['MAC']} && R2>{params['R2']}"
         elif 'MAF' in params:
             expr = f"MAF>{params['MAF']}"
         elif 'R2' in params:

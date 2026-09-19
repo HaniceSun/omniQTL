@@ -156,6 +156,188 @@ class Summary:
         df.drop(columns=['sort'], inplace=True)
         df.to_csv(out_file, index=False, sep='\t')
 
+        wh1 = (df['eQTL'] == 'Yes') & df['RNAseq_data_source'].str.contains('new')
+        wh2 = df['caQTL'] =='Yes' 
+        wh3 = df['pQTL'] == 'Yes'
+        wh4 = df['GSIS'] == 'Yes'
+        wh5 =  df['donor_id'].str.contains('ISLET')
+        print(f'eQTL: {sum(wh1)}')
+        print(f'caQTL: {sum(wh2)}')
+        print(f'pQTL: {sum(wh3)}')
+        print(f'GSIS: {sum(wh4)}')
+        print(f'duplicated: {sum(wh5)}')
+        df_new = df[(wh1|wh2|wh3|wh4)&(~wh5)].iloc[:, 0:5]
+        df_new.to_csv(out_file.replace('.txt', '_new_samples.txt'), index=False, sep='\t')
+        print(f'final number of unique samples: {df_new.shape[0]}')
+
+    def get_donor_info(self, in_file, gap_file='GAP_Oxford-Stanford_conditional_batch18_extraInfo.txt', human_islets_file='human_islets.txt', redcap_file='REDCap.csv', extra_file1='', extra_file2=''):
+        out_file = in_file.split('.txt')[0] + '_donor_info.txt'
+        df = pd.read_table(in_file, header=0, sep='\t')
+
+        # change genotyped column to gwas column, and update the value for subset of samples
+        df['gwas'] = df['genotyped'].copy()
+
+        # alternative id for some donors
+        NID = {}
+        RRID = {}
+        SEX = {}
+        AGE = {}
+        BMI = {}
+        if redcap_file and os.path.exists(redcap_file):
+            df_redcap = pd.read_csv(redcap_file, header=0)
+            for n in range(df_redcap.shape[0]):
+                donor_id = df_redcap['sample_id'].iloc[n]
+                national_id = str(df_redcap['national_id'].iloc[n])
+                rrid = str(df_redcap['rrid'].iloc[n])
+                if national_id != 'nan':
+                    NID.setdefault(donor_id, set())
+                    NID[donor_id].add(national_id)
+                if rrid != 'nan':
+                    RRID.setdefault(donor_id, set())
+                    RRID[donor_id].add(rrid)
+        df['national_id'] = [','.join(sorted(NID.get(x, ['.']))) for x in df['donor_id']]
+
+        if extra_file1 and os.path.exists(extra_file1):
+            df_extra1 = pd.read_table(extra_file1, header=0, sep='\t')
+            for n in range(df_extra1.shape[0]):
+                donor_id = df_extra1['National ID'].iloc[n]
+                sex = str(df_extra1['Gender'].iloc[n]).lower()
+                age = float(df_extra1['Age'].iloc[n])
+                bmi = float(df_extra1['BMI'].iloc[n])
+                if rrid != 'nan':
+                    RRID.setdefault(donor_id, set())
+                    RRID[donor_id].add(rrid)
+                if sex != 'nan':
+                    if sex.lower() in ['m']:
+                        sex = 'male'
+                    elif sex.lower() in ['f']:
+                        sex = 'female'
+                    SEX.setdefault(donor_id, set())
+                    SEX[donor_id].add(sex)
+                if str(age) != 'nan':
+                    AGE.setdefault(donor_id, set())
+                    AGE[donor_id].add(str(age))
+                if str(bmi) != 'nan':
+                    BMI.setdefault(donor_id, set())
+                    BMI[donor_id].add(str(bmi))
+
+        # genetic sex, ancestry, source
+        df_gap = pd.read_table(gap_file, header=0, sep='\t')
+        gap = {}
+        for n in range(df_gap.shape[0]):
+            sample = df_gap['SampleName'].iloc[n]
+            sex = df_gap['Sex'].iloc[n]
+            ancestry = df_gap['Superpopulation'].iloc[n]
+            source = df_gap['Source'].iloc[n]
+            gap[sample] = (sex, ancestry, source)
+
+        E = {}
+        E['sex'] = []
+        E['ancestry'] = []
+        E['source'] = []
+        for n in range(df.shape[0]):
+            sample = df['donor_id'].iloc[n]
+            sex = '.'
+            ancestry = '.'
+            source = 'undetermined'
+            if sample in gap:
+                sex = gap[sample][0]
+                if sex.find(' ') != -1:
+                    sex = sex.split()[0]
+                    print(f'warning: genetic sex of sample {sample} is {sex}')
+                ancestry = gap[sample][1]
+                source = gap[sample][2]
+            E['sex'].append(sex)
+            E['ancestry'].append(ancestry)
+            E['source'].append(source)
+        df['genetic_sex'] = E['sex']
+        df['genetic_ancestry'] = E['ancestry']
+        #df['center'] = E['source']
+
+        # update the genotyped column
+        whs = {}
+        for col in df.columns[1:]:
+            whs[col] = df[col] == 1
+        whs['genetic_sex'] = df['genetic_sex'] != '.'
+        whs['genetic_ancestry'] = df['genetic_ancestry'] != '.'
+
+        wh = whs['gwas'] | whs['rna'] | whs['atac'] | whs['protein'] | whs['genetic_sex']
+        df['genotyped'] = wh.astype(int)
+        whs['genotyped'] = wh
+
+        # rrid
+        df_hi = pd.read_table(human_islets_file, header=0, sep='\t')
+        hi = {}
+        for n in range(df_hi.shape[0]):
+            sample = df_hi['record_id'].iloc[n]
+            rrid = df_hi['rrid'].iloc[n]
+            age = df_hi['donorage'].iloc[n].astype(float)
+            sex = df_hi['donorsex'].iloc[n]
+            height = df_hi['donorheight'].iloc[n].astype(float)
+            weight = df_hi['donorweight'].iloc[n].astype(float)
+            bmi = df_hi['bodymassindex'].iloc[n].astype(float)
+            hba1c = df_hi['hba1c'].iloc[n]
+            hi[sample] = (rrid, sex, age, bmi, hba1c, height, weight)
+
+        v = ['.'] * 7
+        df['RRID'] = [hi.get(sample, v)[0] for sample in df['donor_id']]
+        df['sex'] = [hi.get(sample, v)[1] for sample in df['donor_id']]
+        df['age'] = [hi.get(sample, v)[2] for sample in df['donor_id']]
+        df['bmi'] = [hi.get(sample, v)[3] for sample in df['donor_id']]
+        df['hba1c'] = [hi.get(sample, v)[4] for sample in df['donor_id']]
+        #df['height'] = [hi.get(sample, v)[5] for sample in df['donor_id']]
+        #df['weight'] = [hi.get(sample, v)[6] for sample in df['donor_id']]
+        print(df)
+
+        for n in range(df.shape[0]):
+            sample = df['national_id'].iloc[n]
+            donor = df['donor_id'].iloc[n]
+            rrid = df['RRID'].iloc[n]
+            sex = df['sex'].iloc[n]
+            age = df['age'].iloc[n]
+            bmi = df['bmi'].iloc[n]
+            if rrid == '.' and sample in RRID:
+                df.at[n, 'RRID'] = ','.join(sorted(RRID[sample]))
+            if sex == '.' and sample in SEX:
+                df.at[n, 'sex'] = ','.join(sorted(SEX[sample]))
+            if age == '.' and sample in AGE:
+                df.at[n, 'age'] = ','.join(sorted(AGE[sample]))
+            if bmi == '.' and sample in BMI:
+                df.at[n, 'bmi'] = ','.join(sorted(BMI[sample]))
+            if age == '.' and donor == 'H522':
+                df.at[n, 'age'] = '53'
+        df.to_csv(out_file, index=False, sep='\t')
+
+    def summarize_donor_info(self, in_file='donor_info.txt'):
+        df = pd.read_table(in_file, header=0, sep='\t')
+        out_file = in_file.replace('.txt', '_summary.txt')
+        L = []
+        L.append(['total_donors', df.shape[0], ''])
+        for col in df.columns[1:]:
+            if col in list(df.columns)[1:10]:
+                wh = df[col] == 1
+            else:
+                wh = df[col] != '.'
+            L.append([col, sum(wh)])
+
+        wh1 = df['rna'] == 1
+        wh2 = df['atac'] == 1
+        wh3 = df['protein'] == 1
+        wh4 = df['gwas'] == 1
+        L.append(['qtl', sum(wh1|wh2|wh3)])
+        L.append(['gwas/qtl', sum(wh1|wh2|wh3|wh4)])
+        L.append(['deposited to EGA', sum(wh1|wh2|wh3|wh4)])
+
+        wh1 = df['genetic_sex'] == '.'
+        wh2 = df['sex'] == '.'
+        df_sub = df[~(wh1 | wh2)]
+        wh = df_sub['sex'].str.lower() == df_sub['genetic_sex']
+        df_sub = df_sub[~wh]
+        print(['sex_mismatch', df_sub.shape[0], ','.join(df_sub['donor_id'].tolist())])
+
+        df_summary = pd.DataFrame(L, columns=['info', 'number of donors', 'comments'])
+        df_summary.to_csv(out_file, index=False, sep='\t')
+
     def get_number_raw_peaks(self, in_dirs, out_file='caQTL_number_raw_peaks.txt'):
         L = []
         for in_dir in in_dirs:
