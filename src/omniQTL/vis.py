@@ -648,7 +648,7 @@ class GenoPhenoBarPlot(GeneTxPlot):
                 dft['value'] = np.power(2, dft['value'])
             return dft
         else:
-            raise ValueError(f'Check if the var_id {var_id} is correct.')
+            raise ValueError(f'Check if the gene {gene} is correct.')
         return dft
 
     def get_geno_df(
@@ -705,6 +705,7 @@ class GenoPhenoBarPlot(GeneTxPlot):
             dft['sample'] = df.columns[9:]
             dft['REF'] = df['REF'].iloc[0]
             dft['ALT'] = df['ALT'].iloc[0]
+            GT = []
             L = []
             for n in range(9, df.shape[1]):
                 gt = df.iloc[0, n].split(':')[0]
@@ -717,6 +718,8 @@ class GenoPhenoBarPlot(GeneTxPlot):
                 else:
                     g = np.nan
                 L.append(g)
+                GT.append(gt)
+            dft['GT'] = GT
             dft['genotype'] = L
             return dft
         else:
