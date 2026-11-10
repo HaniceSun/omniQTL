@@ -178,7 +178,7 @@ class QTL:
         if qtl_type in ['caQTL']:
             df_feat = df.iloc[:, 0].str.split('_', expand=True)
             df_feat.columns = ['#Chr', 'start', 'end']
-            mid = int((df_feat['start'].astype(int) + df_feat['end'].astype(int)) / 2)
+            mid = ((df_feat['start'].astype(int) + df_feat['end'].astype(int)) / 2).astype(int)
             df_feat['start'] = mid - 1
             df_feat['end'] = mid
             df_feat['pid'] = df['peakID'] + '_' + df['closestGene']
