@@ -178,8 +178,9 @@ class QTL:
         if qtl_type in ['caQTL']:
             df_feat = df.iloc[:, 0].str.split('_', expand=True)
             df_feat.columns = ['#Chr', 'start', 'end']
-            df_feat['start'] = df_feat['start'].astype(int)
-            df_feat['end'] = df_feat['end'].astype(int)
+            mid = int((df_feat['start'].astype(int) + df_feat['end'].astype(int)) / 2)
+            df_feat['start'] = mid - 1
+            df_feat['end'] = mid
             df_feat['pid'] = df['peakID'] + '_' + df['closestGene']
             df_feat['gid'] = df['closestGene']
             df_feat['strand'] = '+'
@@ -238,36 +239,77 @@ class QTL:
         subprocess.run(cmd, shell=True)
         print('bed file for QTLtools generated and indexed.')
 
-    def run_PCA_on_bed(
+    def get_PCA_pcs(
         self,
-        in_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz',
-        n_pcs: int = 25,
+        pheno_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz',
+        geno_file: str = 'genotype_imputed.vcf.gz',
+        out_file: str = None,
+        n_pcs_pheno: int = 25,
+        n_pcs_geno: int = 3,   
         scale: bool = True,
         center: bool = True,
+        maf_geno: float = 0.05,
+        distance_geno: int = 50000,
+
     ) -> None:
-        """Run QTLtools PCA on a phenotype BED file and keep the top PCs.
+        """Run PCA on both phenotype and genotype files and keep the top PCs.
 
         Args:
-            in_file: Bgzipped, tabix-indexed phenotype BED file (as produced
+            pheno_file: Bgzipped, tabix-indexed phenotype BED file (as produced
                 by `make_bed_for_QTLtools`).
-            n_pcs: Number of top principal components to keep in the output
-                header file.
+            geno_file: Bgzipped, tabix-indexed genotype VCF file.
+            n_pcs_pheno: Number of top principal components to keep for phenotype data.
+            n_pcs_geno: Number of top principal components to keep for genotype data.
             scale: Whether to pass ``--scale`` to ``QTLtools pca``.
             center: Whether to pass ``--center`` to ``QTLtools pca``.
+            maf_geno: Minor allele frequency threshold for genotype PCA.
+            distance_geno: Distance threshold for genotype PCA.
         """
-        out_file = in_file.split('.bed.gz')[0]
-        out_file_head = in_file.replace('.bed.gz', f'_PC{n_pcs}.txt')
-        cmd = f'QTLtools pca --bed {in_file} --out {out_file}'
-        if scale:
-            cmd += ' --scale'
-        if center:
-            cmd += ' --center'
-        if self.QTLtools_env is not None:
-            cmd = f'conda run -n {self.QTLtools_env} ' + cmd
-        subprocess.run(cmd, shell=True)
-        cmd = f'head -n {n_pcs + 1} {out_file}.pca > {out_file_head}'
-        subprocess.run(cmd, shell=True)
-        print('PCA on bed file completed.')
+        if pheno_file is not None and not os.path.exists(pheno_file):
+            raise FileNotFoundError(f'{pheno_file} not found.')
+        if geno_file is not None and not os.path.exists(geno_file):
+            raise FileNotFoundError(f'{geno_file} not found.')
+
+        if pheno_file:
+            out_file_pheno = pheno_file.split('.bed')[0]
+            cmd = f'QTLtools pca --bed {pheno_file} --out {out_file_pheno}'
+            if scale:
+                cmd += ' --scale'
+            if center:
+                cmd += ' --center'
+            if self.QTLtools_env is not None:
+                cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+            subprocess.run(cmd, shell=True)
+            df_pheno = pd.read_table(f'{out_file_pheno}.pca', header=0, sep=' ')
+
+        if geno_file:
+            out_file_geno = geno_file.split('.vcf')[0]
+            cmd = f'QTLtools pca --vcf {geno_file} --maf {maf_geno} --distance {distance_geno} --out {out_file_geno}'
+            if scale:
+                cmd += ' --scale'
+            if center:
+                cmd += ' --center'
+            if self.QTLtools_env is not None:
+                cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+            subprocess.run(cmd, shell=True)
+            df_geno = pd.read_table(f'{out_file_geno}.pca', header=0, sep=' ')
+
+        if out_file is None:
+            if pheno_file:
+                out_file = pheno_file.replace('.bed.gz', f'_PC{n_pcs_pheno}.txt')
+            elif geno_file:
+                out_file = geno_file.replace('.vcf.gz', f'_PC{n_pcs_geno}.txt')    
+
+        if pheno_file and geno_file:
+            if df_pheno.columns[1:].tolist() != df_geno.columns[1:].tolist():
+                raise ValueError(f'Sample names/order in phenotype and genotype PCA outputs do not match')
+            df = pd.concat([df_pheno.iloc[:n_pcs_pheno, :], df_geno.iloc[:n_pcs_geno, :]])
+        elif pheno_file:
+            df = df_pheno.iloc[:n_pcs_pheno, :]
+        elif geno_file:
+            df = df_geno.iloc[:n_pcs_geno, :]
+        df.to_csv(out_file, header=True, index=False, sep=' ')
+        print(f'PCA pcs saved to {out_file}.')
 
     def get_PCA_scree_plot(
         self,
