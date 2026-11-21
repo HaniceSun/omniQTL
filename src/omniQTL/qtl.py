@@ -250,7 +250,7 @@ class QTL:
         center: bool = True,
         maf_geno: float = 0.05,
         distance_geno: int = 50000,
-        extra_covariates_file: str = None,
+        extra_cov_file: str = None,
         correct_pheno: str = True,
         normal: bool = False,
     ) -> None:
@@ -266,7 +266,7 @@ class QTL:
             center: Whether to pass ``--center`` to ``QTLtools pca``.
             maf_geno: Minor allele frequency threshold for genotype PCA.
             distance_geno: Distance threshold for genotype PCA.
-            extra_covariates_file: Optional tab-delimited file of additional covariates to include,
+            extra_cov_file: Optional tab-delimited file of additional covariates to include,
                 with the first column being sample names and the remaining columns being covariate values.
             correct_pheno: Whether to correct the phenotype file for the extra covariates before PCA.
             normal: Whether to pass ``--normal`` to ``QTLtools correct`` for phenotype correction,
@@ -276,12 +276,12 @@ class QTL:
             raise FileNotFoundError(f'{pheno_file} not found.')
         if geno_file is not None and not os.path.exists(geno_file):
             raise FileNotFoundError(f'{geno_file} not found.')
-        if extra_covariates_file is not None and not os.path.exists(extra_covariates_file):
-            raise FileNotFoundError(f'{extra_covariates_file} not found.')
+        if extra_cov_file is not None and not os.path.exists(extra_cov_file):
+            raise FileNotFoundError(f'{extra_cov_file} not found.')
 
         cov_file = None
-        if extra_covariates_file is not None:
-            df_extra_cov = pd.read_table(extra_covariates_file, header=0, sep='\t')
+        if extra_cov_file is not None:
+            df_extra_cov = pd.read_table(extra_cov_file, header=0, sep='\t')
             cov_samples = list(df_extra_cov.iloc[:, 0])
             if pheno_file is not None:
                 df_pheno = pd.read_table(pheno_file, header=0, sep='\t', nrows=0)
@@ -297,7 +297,7 @@ class QTL:
                             break
                 if cov_samples != geno_samples:
                     raise ValueError(f'Sample names/order in extra_covariates and genotype file do not match')
-            cov_file = extra_covariates_file.split('.txt')[0] + '_fmt.txt'
+            cov_file = extra_cov_file.split('.txt')[0] + '_fmt.txt'
             df_extra_cov.T.to_csv(cov_file, header=False, index=True, sep=' ')
 
         if pheno_file:
