@@ -239,18 +239,20 @@ class QTL:
         subprocess.run(cmd, shell=True)
         print('bed file for QTLtools generated and indexed')
 
-    def get_PCA_pcs(
+    def get_covariates(
         self,
         pheno_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered.bed.gz',
         geno_file: str = 'genotype_imputed.vcf.gz',
         out_file: str = None,
         n_pcs_pheno: int = 25,
-        n_pcs_geno: int = 3,   
+        n_pcs_geno: int = 5,   
         scale: bool = True,
         center: bool = True,
         maf_geno: float = 0.05,
         distance_geno: int = 50000,
-
+        extra_covariates_file: str = None,
+        correct_pheno: str = True,
+        normal: bool = False,
     ) -> None:
         """Run PCA on both phenotype and genotype files and keep the top PCs.
 
@@ -264,21 +266,67 @@ class QTL:
             center: Whether to pass ``--center`` to ``QTLtools pca``.
             maf_geno: Minor allele frequency threshold for genotype PCA.
             distance_geno: Distance threshold for genotype PCA.
+            extra_covariates_file: Optional tab-delimited file of additional covariates to include,
+                with the first column being sample names and the remaining columns being covariate values.
+            correct_pheno: Whether to correct the phenotype file for the extra covariates before PCA.
+            normal: Whether to pass ``--normal`` to ``QTLtools correct`` for phenotype correction,
+            False by default, as the pca step will use scale and center.
         """
         if pheno_file is not None and not os.path.exists(pheno_file):
             raise FileNotFoundError(f'{pheno_file} not found.')
         if geno_file is not None and not os.path.exists(geno_file):
             raise FileNotFoundError(f'{geno_file} not found.')
+        if extra_covariates_file is not None and not os.path.exists(extra_covariates_file):
+            raise FileNotFoundError(f'{extra_covariates_file} not found.')
+
+        cov_file = None
+        if extra_covariates_file is not None:
+            df_extra_cov = pd.read_table(extra_covariates_file, header=0, sep='\t')
+            cov_samples = list(df_extra_cov.iloc[:, 0])
+            if pheno_file is not None:
+                df_pheno = pd.read_table(pheno_file, header=0, sep='\t', nrows=0)
+                pheno_samples = list(df_pheno.columns[6:])
+                if cov_samples != pheno_samples:
+                    raise ValueError(f'Sample names/order in extra_covariates and phenotype file do not match')
+            if geno_file is not None:
+                with gzip.open(geno_file, 'rt') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('#CHROM'):
+                            geno_samples = line.split('\t')[9:]
+                            break
+                if cov_samples != geno_samples:
+                    raise ValueError(f'Sample names/order in extra_covariates and genotype file do not match')
+            cov_file = extra_covariates_file.split('.txt')[0] + '_fmt.txt'
+            df_extra_cov.T.to_csv(cov_file, header=False, index=True, sep=' ')
 
         if pheno_file:
             out_file_pheno = pheno_file.split('.bed')[0]
-            cmd = f'QTLtools pca --bed {pheno_file} --out {out_file_pheno}'
+            pheno_cov_corrected = out_file_pheno + '_cov_corrected.bed'
+            if cov_file is not None and correct_pheno:
+                cmd = f'QTLtools correct --bed {pheno_file} --out {pheno_cov_corrected} --cov {cov_file}'
+                if normal:
+                    cmd += ' --normal'
+                if self.QTLtools_env is not None:
+                    cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+                print('Running QTLtools correct for phenotype file with covariates...')
+                print(cmd)
+                subprocess.run(cmd, shell=True)
+                cmd = f'bgzip -f {pheno_cov_corrected}; tabix -p bed {pheno_cov_corrected}.gz'
+                subprocess.run(cmd, shell=True)
+
+            if cov_file is not None:
+                cmd = f'QTLtools pca --bed {pheno_cov_corrected}.gz --out {out_file_pheno}'
+            else:
+                cmd = f'QTLtools pca --bed {pheno_file} --out {out_file_pheno}'
             if scale:
                 cmd += ' --scale'
             if center:
                 cmd += ' --center'
             if self.QTLtools_env is not None:
                 cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+            print('Running QTLtools PCA for phenotype file...')
+            print(cmd)
             subprocess.run(cmd, shell=True)
             df_pheno = pd.read_table(f'{out_file_pheno}.pca', header=0, sep=' ')
 
@@ -291,6 +339,8 @@ class QTL:
                 cmd += ' --center'
             if self.QTLtools_env is not None:
                 cmd = f'conda run -n {self.QTLtools_env} ' + cmd
+            print('Running QTLtools PCA for genotype file...')
+            print(cmd)
             subprocess.run(cmd, shell=True)
             df_geno = pd.read_table(f'{out_file_geno}.pca', header=0, sep=' ')
 
@@ -308,8 +358,20 @@ class QTL:
             df = df_pheno.iloc[:n_pcs_pheno, :]
         elif geno_file:
             df = df_geno.iloc[:n_pcs_geno, :]
+
+        extra_cov_str = None
+        if cov_file is not None:
+            df_cov = pd.read_table(cov_file, header=0, sep=' ')
+            df_cov.columns = df.columns
+            df = pd.concat([df, df_cov])
+            os.remove(cov_file)
+            extra_cov_str = ','.join(list(df_cov.iloc[:, 0].astype(str)))
+
         df.to_csv(out_file, header=True, index=False, sep=' ')
-        print(f'PCA pcs saved to {out_file}')
+        if extra_cov_str:
+            print(f'covariates ({n_pcs_geno} geno PCs, {n_pcs_pheno} pheno PCs, and {extra_cov_str}) saved to {out_file}')
+        else:
+            print(f'covariates ({n_pcs_geno} geno PCs and {n_pcs_pheno} pheno PCs) saved to {out_file}')
 
     def get_PCA_scree_plot(
         self,
@@ -356,50 +418,6 @@ class QTL:
         ax.set_title(title)
         plt.tight_layout()
         plt.savefig(out_file)
-
-    def add_extra_covariates(
-        self,
-        in_file: str = 'ATACseq_peakCounts_closestGene_TPM_subsetRenamed_peakFiltered_PC25.txt',
-        extra_cov_file: str = 'sample_info.txt',
-    ) -> None:
-        """Append extra per-sample covariates to a QTLtools covariate file.
-
-        Samples present in `in_file` but missing from `extra_cov_file` are
-        assigned a covariate value of ``0`` (with a warning printed).
-
-        Args:
-            in_file: Whitespace-delimited covariate file (e.g. PCA output)
-                with samples as columns and covariates as rows.
-            extra_cov_file: Tab-delimited file with samples in the first
-                column and one additional covariate per remaining column.
-        """
-        out_file = in_file.replace('.txt', '_extraCov.txt')
-        df_cov = pd.read_table(extra_cov_file, header=0, sep='\t')
-        D = {}
-        for n in range(df_cov.shape[0]):
-            for m in range(1, df_cov.shape[1]):
-                cov_name = df_cov.columns[m]
-                sample = df_cov.iloc[n, 0]
-                value = df_cov.iloc[n, m]
-                D.setdefault(cov_name, {})
-                D[cov_name][sample] = value
-
-        df = pd.read_table(in_file, header=0, sep=r'\s+')
-        L = []
-        for cov_name in D:
-            V = [cov_name]
-            for sample in df.columns[1:]:
-                if sample in D[cov_name]:
-                    value = D[cov_name][sample]
-                else:
-                    value = 0
-                    print(f'WARNING: sample {sample} not found in covariate {cov_name}, assigning value 0')
-                V.append(value)
-            L.append(V)
-        df_extra = pd.DataFrame(L)
-        df_extra.columns = df.columns
-        df = pd.concat([df, df_extra])
-        df.to_csv(out_file, header=True, index=False, sep=' ')
 
     def get_QTLtools_script(
         self,
