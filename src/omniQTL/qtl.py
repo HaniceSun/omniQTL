@@ -364,7 +364,6 @@ class QTL:
             df_cov = pd.read_table(cov_file, header=0, sep=' ')
             df_cov.columns = df.columns
             df = pd.concat([df, df_cov])
-            os.remove(cov_file)
             extra_cov_str = ','.join(list(df_cov.iloc[:, 0].astype(str)))
 
         df.to_csv(out_file, header=True, index=False, sep=' ')
@@ -372,6 +371,10 @@ class QTL:
             print(f'covariates ({n_pcs_geno} geno PCs, {n_pcs_pheno} pheno PCs, and {extra_cov_str}) saved to {out_file}')
         else:
             print(f'covariates ({n_pcs_geno} geno PCs and {n_pcs_pheno} pheno PCs) saved to {out_file}')
+
+        for f in [cov_file, pheno_cov_corrected + '.gz', pheno_cov_corrected + '.gz.tbi']:
+            if f is not None and os.path.exists(f):
+                os.remove(f)
 
     def get_PCA_scree_plot(
         self,
